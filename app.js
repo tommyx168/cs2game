@@ -875,11 +875,12 @@ function render(state){
 
   if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。等待管理员`;
   else if (phase === "draft") status.textContent = "选人进行中";
-  else if (phase === "draft_done") status.textContent = "选人结束";
+  else if (phase === "draft_done") status.textContent = "等待下阶段";
   else if (phase === "reveal") status.textContent = "身份阶段";
   else if (phase === "teams") status.textContent = "队伍成员";
   else status.textContent = "状态不认识";
 }
+
 
 
 
