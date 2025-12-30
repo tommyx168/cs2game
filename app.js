@@ -757,7 +757,6 @@ function render(state){
     const participants = Object.keys(roles);
     const allConfirmed = participants.length > 0 && participants.every(pid => confirm[pid] === true);
 
-    revealStatus.textContent = allConfirmed ? "请确认" : "看完身份请点确认";
 
     const myRole = roles[myPlayerId];
     const inMatch = !!myRole;
@@ -817,5 +816,6 @@ function render(state){
   else if (phase === "teams") status.textContent = "队伍成员（名单/候补仍可查看）";
   else status.textContent = "状态不认识";
 }
+
 
 
