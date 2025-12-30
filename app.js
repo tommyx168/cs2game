@@ -767,10 +767,11 @@ function render(state){
   const pCount = Object.keys(players).length;
   const wCount = Object.keys(waitlist).length;
 
-  if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员点【开始选人】就开搞。`;
-  else if (phase === "draft") status.textContent = "选人进行中：轮到队长就从等待区点人。";
-  else if (phase === "draft_done") status.textContent = "选人结束：等管理员点【分配身份】。";
-  else if (phase === "reveal") status.textContent = "身份阶段：上场的人确认自己的身份。";
-  else if (phase === "teams") status.textContent = "名单页：只显示双方成员。";
-  else status.textContent = "状态不认识：让管理员点【一键重置】。";
+  if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。等待管理员`;
+  else if (phase === "draft") status.textContent = "选人进行中";
+  else if (phase === "draft_done") status.textContent = "选人结束";
+  else if (phase === "reveal") status.textContent = "身份阶段";
+  else if (phase === "teams") status.textContent = "队伍成员";
+  else status.textContent = "状态不认识";
 }
+
