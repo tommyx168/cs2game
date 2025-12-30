@@ -1,77 +1,455 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CS2 私房局大厅</title>
-  <link rel="stylesheet" href="style.css?v=20251230_1" />
-</head>
-<body>
+/***************
+ * Firebase 配置（你的项目）
+ ***************/
+const firebaseConfig = {
+  apiKey: "AIzaSyB9Bygv0bF0pua7eaZrg0P7OKQxI7nQSSA",
+  authDomain: "cs2wolf.firebaseapp.com",
+  databaseURL: "https://cs2wolf-default-rtdb.firebaseio.com",
+  projectId: "cs2wolf",
+  storageBucket: "cs2wolf.firebasestorage.app",
+  messagingSenderId: "363478226944",
+  appId: "1:363478226944:web:925c9cf6cc3d646d0a60e5",
+  measurementId: "G-7Z9VDLDPQ3"
+};
 
-  <!-- 进入页：只有输入 + 加入 -->
-  <div id="entryPage" class="center">
-    <div class="panel">
-      <h1>请输入 ID（名字 + 段位）</h1>
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-      <div class="row">
-        <input id="playerInput" placeholder="例：xGonv AK（一个输入框）" />
-        <button id="btnJoin" class="primary">加入</button>
-      </div>
+/***************
+ * 固定房间 + 管理员码（你想改就改这里）
+ ***************/
+const FIXED_ROOM_ID = "cs2";
+const ADMIN_CODE    = "tommy168";
 
-      <div id="adminHint" class="hint hidden">
-        你当前处于管理员模式（你用的是管理员链接）。
-      </div>
+const MAX_PLAYERS = 10;
+const MAX_WAIT    = 4;
 
-      <div class="hint">
-        前10人进入大厅，超过进候补（最多4人）。<br/>
-        管理员点开始后，只有大厅10人需要准备，候补不用准备。<br/>
-        关闭网页/断网会自动退出房间。
-      </div>
-    </div>
-  </div>
+const $ = (id) => document.getElementById(id);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+const now = () => Date.now();
 
-  <!-- 房间页 -->
-  <div id="roomPage" class="wrap hidden">
-    <div class="card">
-      <div class="topbar">
-        <div>
-          <div class="titleRow">
-            <div class="title">房间：<span id="roomTitle"></span></div>
-            <div id="roleBadge" class="badge">游客</div>
-          </div>
-          <div id="meLine" class="hint"></div>
+function qs(name){
+  const p = new URLSearchParams(location.search);
+  return p.get(name);
+}
+function isAdmin(){
+  return qs("admin") === ADMIN_CODE;
+}
+function escapeHtml(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+function shortPid(pid){ return (pid || "").slice(0, 8); }
+
+let myPlayerId = localStorage.getItem("cs2_site_playerId") || uid();
+localStorage.setItem("cs2_site_playerId", myPlayerId);
+
+const roomId = FIXED_ROOM_ID;
+const roomRef = db.ref(`rooms/${roomId}`);
+
+let snapshotCache = null;
+
+/***************
+ * UI
+ ***************/
+const entryPage = $("entryPage");
+const roomPage  = $("roomPage");
+const btnJoin   = $("btnJoin");
+const btnLeave  = $("btnLeave");
+const btnStart  = $("btnStart");
+const btnReset  = $("btnReset");
+const btnReady  = $("btnReady");
+const btnGoDraft = $("btnGoDraft");
+const btnAdminEnter = $("btnAdminEnter");
+
+function showEntry(){
+  entryPage.classList.remove("hidden");
+  roomPage.classList.add("hidden");
+}
+function showRoom(){
+  entryPage.classList.add("hidden");
+  roomPage.classList.remove("hidden");
+}
+
+$("roomTitle").textContent = roomId;
+$("adminHint").classList.toggle("hidden", !isAdmin());
+
+// 一键进入管理员模式（方便你不记链接）
+btnAdminEnter.onclick = () => {
+  location.href = `${location.origin}${location.pathname}?admin=${ADMIN_CODE}`;
+};
+
+// 关闭/断线自动退出（双保险）
+window.addEventListener("beforeunload", () => {
+  try {
+    roomRef.child(`players/${myPlayerId}`).remove();
+    roomRef.child(`waitlist/${myPlayerId}`).remove();
+  } catch {}
+});
+
+async function safeRemoveMe(){
+  try { await roomRef.child(`players/${myPlayerId}`).remove(); } catch {}
+  try { await roomRef.child(`waitlist/${myPlayerId}`).remove(); } catch {}
+}
+
+/***************
+ * 加入：先填满10人，再进候补4人
+ * 规则：如果对局已不在 lobby（ready/draft），新加入不允许进大厅，只能进候补
+ ***************/
+btnJoin.onclick = async () => {
+  const displayName = $("playerInput").value.trim();
+  if (!displayName) return alert("请输入：名字 段位（例：xGonv AK）");
+
+  const me = {
+    id: myPlayerId,
+    displayName,
+    joinedAt: now(),
+    ready: false
+  };
+
+  const result = await roomRef.transaction((room) => {
+    room = room || {};
+    room.players = room.players || {};
+    room.waitlist = room.waitlist || {};
+    room.kicked = room.kicked || {};
+    room.game = room.game || { phase: "lobby" };
+
+    const phase = room.game.phase || "lobby";
+    const pCount = Object.keys(room.players).length;
+    const wCount = Object.keys(room.waitlist).length;
+
+    // 已在房间：更新名字
+    if (room.players[myPlayerId]) {
+      room.players[myPlayerId] = { ...room.players[myPlayerId], displayName };
+      return room;
+    }
+    if (room.waitlist[myPlayerId]) {
+      room.waitlist[myPlayerId] = { ...room.waitlist[myPlayerId], displayName };
+      return room;
+    }
+
+    // 非 lobby：不允许新进大厅，只能候补
+    if (phase !== "lobby") {
+      if (wCount < MAX_WAIT) room.waitlist[myPlayerId] = { ...me, ready:false };
+      return room;
+    }
+
+    if (pCount < MAX_PLAYERS) {
+      room.players[myPlayerId] = me;
+      return room;
+    }
+    if (wCount < MAX_WAIT) {
+      room.waitlist[myPlayerId] = { ...me, ready:false };
+      return room;
+    }
+
+    // 满员：不加入
+    return room;
+  });
+
+  if (!result.committed) return alert("加入失败，请刷新重试。");
+
+  // 断线自动退出
+  roomRef.child(`players/${myPlayerId}`).onDisconnect().remove();
+  roomRef.child(`waitlist/${myPlayerId}`).onDisconnect().remove();
+
+  showRoom();
+};
+
+btnLeave.onclick = async () => {
+  const ok = confirm("确定退出房间？");
+  if (!ok) return;
+  await safeRemoveMe();
+  showEntry();
+};
+
+/***************
+ * 管理员：开始对局 -> phase=ready + 清空大厅 ready
+ ***************/
+btnStart.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能开始");
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.players = room.players || {};
+    room.waitlist = room.waitlist || {};
+    room.game = room.game || {};
+    room.game.phase = "ready";
+    room.game.startedAt = now();
+
+    Object.keys(room.players).forEach(pid => {
+      room.players[pid].ready = false;
+    });
+    return room;
+  });
+};
+
+/***************
+ * 管理员：重置 -> phase=lobby + 清 ready + 清 teams
+ ***************/
+btnReset.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能重置");
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.players = room.players || {};
+    room.waitlist = room.waitlist || {};
+    room.kicked = room.kicked || {};
+    room.game = { phase: "lobby", resetAt: now() };
+    room.teams = null;
+    Object.keys(room.players).forEach(pid => room.players[pid].ready = false);
+    return room;
+  });
+};
+
+/***************
+ * 玩家：准备/取消准备（仅大厅玩家，且 phase=ready）
+ ***************/
+btnReady.onclick = async () => {
+  const state = snapshotCache || {};
+  const phase = state.game?.phase || "lobby";
+  if (phase !== "ready") return;
+
+  const players = state.players || {};
+  if (!players[myPlayerId]) return; // 候补不允许准备
+
+  const cur = !!players[myPlayerId].ready;
+  await roomRef.child(`players/${myPlayerId}/ready`).set(!cur);
+};
+
+/***************
+ * 管理员：进入选人（draft）
+ * 条件：phase=ready + 大厅人数>=2 + 偶数 + 全员ready
+ ***************/
+btnGoDraft.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能操作");
+
+  const state = snapshotCache || {};
+  const phase = state.game?.phase || "lobby";
+  if (phase !== "ready") return alert("必须先开始对局并进入准备阶段");
+
+  const players = state.players || {};
+  const ids = Object.keys(players);
+
+  if (ids.length < 2) return alert("至少需要2个人");
+  if (ids.length % 2 !== 0) return alert("人数必须是偶数（两边人数相同）");
+
+  const allReady = ids.every(pid => players[pid]?.ready === true);
+  if (!allReady) return alert("还有人没准备");
+
+  await roomRef.child("game").update({ phase: "draft", draftAt: now() });
+};
+
+/***************
+ * 踢人（管理员）：踢大厅或候补
+ ***************/
+async function kickPlayer(pid){
+  if (!isAdmin()) return alert("只有管理员能踢人");
+  const name = snapshotCache?.players?.[pid]?.displayName || snapshotCache?.waitlist?.[pid]?.displayName || pid;
+  const ok = confirm(`确定踢出：${name}？`);
+  if (!ok) return;
+
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.players = room.players || {};
+    room.waitlist = room.waitlist || {};
+    room.kicked = room.kicked || {};
+    room.kicked[pid] = { at: now(), by: myPlayerId };
+    delete room.players[pid];
+    delete room.waitlist[pid];
+    return room;
+  });
+
+  await tryPromoteWaitlist(); // 仅 lobby 才会补位
+}
+
+/***************
+ * 候补补位：只在 lobby 阶段补位（有人退出时补）
+ ***************/
+async function tryPromoteWaitlist(){
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.players = room.players || {};
+    room.waitlist = room.waitlist || {};
+    room.game = room.game || { phase: "lobby" };
+
+    if (room.game.phase !== "lobby") return room;
+
+    const pCount = Object.keys(room.players).length;
+    if (pCount >= MAX_PLAYERS) return room;
+
+    const waitIds = Object.keys(room.waitlist);
+    if (waitIds.length === 0) return room;
+
+    waitIds.sort((a,b) => (room.waitlist[a]?.joinedAt||0) - (room.waitlist[b]?.joinedAt||0));
+
+    while (Object.keys(room.players).length < MAX_PLAYERS && waitIds.length > 0) {
+      const pid = waitIds.shift();
+      room.players[pid] = room.waitlist[pid];
+      room.players[pid].ready = false;
+      delete room.waitlist[pid];
+    }
+    return room;
+  });
+}
+
+/***************
+ * 实时监听：渲染 + 被踢提示 + lobby补位
+ ***************/
+roomRef.on("value", async (snap) => {
+  snapshotCache = snap.val() || {};
+  render(snapshotCache);
+
+  // 只要在 lobby，就尝试补位（有人退出时会生效）
+  await tryPromoteWaitlist();
+
+  // 被踢
+  if (snapshotCache.kicked && snapshotCache.kicked[myPlayerId]) {
+    alert("你已被管理员踢出房间");
+    await safeRemoveMe();
+    try { await roomRef.child(`kicked/${myPlayerId}`).remove(); } catch {}
+    showEntry();
+  }
+});
+
+function render(state){
+  const players = state.players || {};
+  const waitlist = state.waitlist || {};
+  const phase = state.game?.phase || "lobby";
+
+  const inPlayers = !!players[myPlayerId];
+  const inWait    = !!waitlist[myPlayerId];
+
+  if (inPlayers || inWait) showRoom(); else showEntry();
+
+  $("roleBadge").textContent = isAdmin() ? "管理员" : "游客";
+  $("adminPanel").classList.toggle("hidden", !isAdmin());
+  btnStart.disabled = !isAdmin();
+  btnReset.disabled = !isAdmin();
+
+  const meObj = players[myPlayerId] || waitlist[myPlayerId];
+  $("meLine").textContent = meObj
+    ? `你的ID：${meObj.displayName}  |  内部：${shortPid(myPlayerId)}`
+    : "";
+
+  // 准备按钮：仅大厅玩家且 phase=ready
+  const showReady = inPlayers && phase === "ready";
+  btnReady.classList.toggle("hidden", !showReady);
+  if (showReady) btnReady.textContent = players[myPlayerId].ready ? "取消准备" : "准备";
+
+  // 进入选人按钮：管理员 + ready阶段 + 大厅人数偶数 + 全员准备
+  const ids = Object.keys(players);
+  const allReady = ids.length > 0 && ids.every(pid => players[pid]?.ready === true);
+  const canDraft = isAdmin() && phase === "ready" && ids.length >= 2 && (ids.length % 2 === 0) && allReady;
+  btnGoDraft.disabled = !canDraft;
+
+  // 分队颜色预留：你后续把 teams 写入 state.teams 就会自动上色
+  const teams = state.teams || null;
+  const blueSet = new Set(teams?.blue || []);
+  const redSet  = new Set(teams?.red  || []);
+
+  // 渲染大厅10条
+  const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
+  const grid = $("playerGrid");
+  grid.innerHTML = "";
+
+  for (let i=0;i<MAX_PLAYERS;i++){
+    const pid = pIds[i];
+    const slot = document.createElement("div");
+
+    if (!pid) {
+      slot.className = "slot empty";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">空位</div>
+          <div class="slotSub">—</div>
         </div>
-        <div class="row" style="margin:0;">
-          <button id="btnReady" class="primary hidden">准备</button>
-          <button id="btnLeave">退出房间</button>
+      `;
+    } else {
+      const p = players[pid];
+      const name = p.displayName || pid;
+
+      let cls = "slot";
+      if (p.ready) cls += " ready";
+      if (blueSet.has(pid)) cls += " blue";
+      if (redSet.has(pid))  cls += " red";
+      slot.className = cls;
+
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(name)}</div>
+          <div class="slotSub">${shortPid(pid)}</div>
         </div>
-      </div>
+      `;
 
-      <!-- 管理员区（游客看不到） -->
-      <div id="adminPanel" class="admin hidden">
-        <div class="adminTitle">管理员面板</div>
-        <div class="row">
-          <button id="btnStart" class="danger">开始对局（管理员）</button>
-          <button id="btnReset">重置（管理员）</button>
+      if (isAdmin()) {
+        const k = document.createElement("button");
+        k.className = "kickBtn";
+        k.textContent = "×";
+        k.onclick = () => kickPlayer(pid);
+        slot.appendChild(k);
+      }
+    }
+    grid.appendChild(slot);
+  }
+
+  // 渲染候补4条
+  const wIds = Object.keys(waitlist).sort((a,b)=> (waitlist[a].joinedAt||0)-(waitlist[b].joinedAt||0));
+  const wGrid = $("waitGrid");
+  wGrid.innerHTML = "";
+
+  for (let i=0;i<MAX_WAIT;i++){
+    const pid = wIds[i];
+    const slot = document.createElement("div");
+
+    if (!pid) {
+      slot.className = "slot empty";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">空候补</div>
+          <div class="slotSub">—</div>
         </div>
-        <div class="hint">踢人：点玩家条右侧的 “×”。</div>
-      </div>
+      `;
+    } else {
+      const p = waitlist[pid];
+      const name = p.displayName || pid;
+      slot.className = "slot";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(name)}</div>
+          <div class="slotSub">${shortPid(pid)}</div>
+        </div>
+      `;
 
-      <div class="sectionTitle">大厅（最多10人，左5右5）</div>
-      <div id="playerGrid" class="slots"></div>
+      if (isAdmin()) {
+        const k = document.createElement("button");
+        k.className = "kickBtn";
+        k.textContent = "×";
+        k.onclick = () => kickPlayer(pid);
+        slot.appendChild(k);
+      }
+    }
+    wGrid.appendChild(slot);
+  }
 
-      <div class="sectionTitle" style="margin-top:14px;">候补（最多4人，不需要准备）</div>
-      <div id="waitGrid" class="waitSlots"></div>
+  // 状态文字
+  const pCount = pIds.length;
+  const wCount = wIds.length;
+  const readyCount = Object.keys(players).filter(pid => players[pid].ready).length;
 
-      <div id="statusBox" class="status">大厅中…</div>
-    </div>
-  </div>
-
-  <!-- Firebase CDN -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-
-  <script src="app.js?v=20251230_1"></script>
-</body>
-</html>
-
+  if (phase === "ready") {
+    $("statusBox").textContent = `对局已开始：大厅玩家请准备（${readyCount}/${pCount} 已准备）。候补不需要准备。`;
+  } else if (phase === "draft") {
+    $("statusBox").textContent = `已进入选人阶段（draft）。下一步我可以帮你接：抽队长 + 选人顺序 + 蓝红分队。`;
+  } else {
+    if (pCount >= MAX_PLAYERS && wCount >= MAX_WAIT) {
+      $("statusBox").textContent = `房间已满：10人大厅 + 4人候补（满员）。`;
+    } else if (pCount >= MAX_PLAYERS) {
+      $("statusBox").textContent = `大厅10人已满：新加入进入候补（${wCount}/4）。`;
+    } else {
+      $("statusBox").textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。`;
+    }
+  }
+}
