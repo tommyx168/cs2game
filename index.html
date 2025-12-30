@@ -4,17 +4,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CS2 私房局选人</title>
+  <title>CS2 谁是卧底</title>
   <link rel="stylesheet" href="style.css?v=20251230_full" />
 </head>
 <body>
   <!-- 进房页 -->
   <div id="entryPage" class="center">
     <div class="panel">
-      <div class="h1">先报个号（名字 + 段位）</div>
+      <div class="h1">CS2谁是卧底（名字 + 段位）</div>
       <div class="row">
         <input id="playerInput" placeholder="例：xGonv AK" />
-        <button id="btnJoin" class="btn primary">进房</button>
+        <button id="btnJoin" class="btn primary">进入</button>
       </div>
       <div id="adminHint" class="hint hidden">你现在是管理员模式。</div>
       <div class="hint">
@@ -52,8 +52,8 @@
         <div class="row" style="margin:0;">
           <button id="btnSwitch" class="btn ghost hidden">切换到候补</button>
 
-          <button id="btnStartDraft" class="btn primary hidden">开搞选人（管理员）</button>
-          <button id="btnAssignRoles" class="btn danger hidden">分配身份（管理员）</button>
+          <button id="btnStartDraft" class="btn primary hidden">开始选人</button>
+          <button id="btnAssignRoles" class="btn danger hidden">分配身份</button>
 
           <button id="btnLeave" class="btn">退出</button>
         </div>
@@ -63,28 +63,28 @@
         <div class="adminTitle">管理员工具箱</div>
         <div class="row">
           <button id="btnReset" class="btn ghost">一键重置</button>
-          <button id="btnAdminPeek" class="btn ghost">管理员查看信息（默认不看）</button>
+          <button id="btnAdminPeek" class="btn ghost">查看身份（关）</button>
         </div>
         <div class="hint">踢人：点玩家条右侧“×”。</div>
       </div>
 
       <!-- 大厅阶段 -->
       <div id="stageLobby">
-        <div class="sectionTitle">大厅（最多10人）</div>
+        <div class="sectionTitle">大厅</div>
         <div id="playerGrid" class="slots"></div>
 
-        <div class="sectionTitle" style="margin-top:14px;">候补（最多4人）</div>
+        <div class="sectionTitle" style="margin-top:14px;">候补</div>
         <div id="waitGrid" class="waitSlots"></div>
       </div>
 
       <!-- 选人阶段 -->
       <div id="stageDraft" class="hidden">
-        <div class="sectionTitle">选人阶段（队长轮流点人）</div>
+        <div class="sectionTitle">选人阶段</div>
 
         <div class="row">
           <div class="card subcard">
             <div class="titleRow" style="justify-content:space-between;">
-              <div class="title">蓝队（先选）</div>
+              <div class="title">蓝队first pick</div>
               <div id="turnBlue" class="badge">—</div>
             </div>
             <div id="blueTeamBox"></div>
@@ -92,7 +92,7 @@
 
           <div class="card subcard">
             <div class="titleRow" style="justify-content:space-between;">
-              <div class="title">红队（后选）</div>
+              <div class="title">红队</div>
               <div id="turnRed" class="badge">—</div>
             </div>
             <div id="redTeamBox"></div>
@@ -101,7 +101,7 @@
 
         <div class="card">
           <div class="titleRow" style="justify-content:space-between;">
-            <div class="title">等待区（还没被点走的都在这）</div>
+            <div class="title">等待区</div>
             <div id="pickHint" class="badge">—</div>
           </div>
           <div id="waitingBox" class="slots"></div>
@@ -119,7 +119,7 @@
           </div>
           <div id="myRoleCard" class="hint" style="font-size:14px; line-height:1.9;"></div>
           <div class="row" style="margin-top:12px;">
-            <button id="btnConfirmRole" class="btn primary">我确认了</button>
+            <button id="btnConfirmRole" class="btn primary">确认</button>
           </div>
           <div id="revealHint" class="hint"></div>
         </div>
@@ -127,7 +127,7 @@
 
       <!-- 名单页 -->
       <div id="stageTeams" class="hidden">
-        <div class="sectionTitle">队伍名单（只显示成员，不显示身份）</div>
+        <div class="sectionTitle">双方成员</div>
 
         <div class="row">
           <div class="card subcard">
@@ -141,7 +141,7 @@
           </div>
         </div>
 
-        <div class="hint">想重来就让管理员点“一键重置”。</div>
+        <div class="hint">重来请call管理员</div>
       </div>
 
       <div id="statusBox" class="status">大厅中…</div>
@@ -153,4 +153,5 @@
   <script src="app.js?v=20251230_full"></script>
 </body>
 </html>
+
 
