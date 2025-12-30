@@ -767,7 +767,7 @@ function render(state){
       btnConfirmRole.disabled = true;
       revealHint.textContent = "只有上场的人需要确认";
     } else {
-      myRoleCard.innerHTML = `你的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点“确认”。`;
+      myRoleCard.innerHTML = `<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点“确认”。`;
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
       revealHint.textContent = confirm[myPlayerId] ? "你已确认，等待其他人" : "确认后无法更改";
     }
@@ -817,3 +817,4 @@ function render(state){
   else if (phase === "teams") status.textContent = "队伍成员（名单/候补仍可查看）";
   else status.textContent = "状态不认识";
 }
+
