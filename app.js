@@ -49,6 +49,23 @@ function pickRandom(list){
   return list[Math.floor(Math.random() * list.length)];
 }
 
+const undercoverMissions = [
+  { name: "静步恐惧症", desc: "在残局或者是回防的时候，莫名其妙地切刀或者跳跃，漏出一个脚步声。" },
+  { name: "钳子遗忘者", desc: "作为 CT，即使有 4000+ 的经济，也坚决不买拆弹器。如果是 T，不捡地上的包，除非队友扔给你。" },
+  { name: "无甲莽夫", desc: "在至少一把需要起全甲的局，不起甲。" },
+  { name: "老爸到了", desc: "在架点或者准备拉出去打人的关键时刻，按 F 检视武器。" },
+  { name: "精神分裂报点", desc: "在残局或者静步摸排的时候，报假点，骗队友全体转点，把这就空的包点卖给对面。" },
+  { name: "电击狂魔", desc: "在长枪局，一定要尝试用电击枪去电死一个人。" },
+  { name: "不管不顾去拆包", desc: "作为 CT 回防时，不封烟或者不检查死角，直接上去假拆（或者真拆），并在语音里大喊'帮我架枪帮我架枪！'。" },
+  { name: "自信回头", desc: "跟人对枪对到一半（没死也没杀掉），突然切刀转身跑路，或者想去扔道具。" },
+  { name: "烟中恶鬼", desc: "封了一颗烟雾弹，然后自己硬着头皮干拉混烟出，白给。" },
+  { name: "甚至不愿意封一颗烟", desc: "队友喊'给颗过点烟'或者'封个链接'的时候，假装切出烟雾弹瞄了半天，然后扔疵了，导致队友干拉出去被架死。" },
+  { name: "顶级保镖", desc: "当你的队友（特别是狙击手）在拐角探头对枪时，你蹲在他屁股后面紧贴着他。当他开完枪想缩回来的时候，发现被你卡住了，惨遭对面击杀。" },
+  { name: "这种人不杀留着过年？", desc: "当你躲在老六位，看到敌人侧身或者背身路过时，坚决不开枪。放过去第一个，甚至放过去第二个，直到对面发现你或者你试图刀人失败被反杀。" },
+  { name: "赛点守财奴", desc: "在上半场最后一局，或者整场比赛的决胜局（12:12 这种），明明有 16000 块钱，却不起满道具，甚至只起半甲/不买钳子，以此“存钱”。" },
+  { name: "换血狂魔", desc: "开局切刀赶路时，或者在狭窄通道（如下水道），用刀划（轻击）队友一下，或者开枪打队友脚一下，造成 10-20 点伤害。" }
+];
+
 // === 本地身份 & 名字缓存（关键：防止名字丢了显示 UUID） ===
 let myPlayerId = localStorage.getItem("cs2_site_playerId") || uid();
 localStorage.setItem("cs2_site_playerId", myPlayerId);
@@ -447,20 +464,34 @@ btnAssignRoles.onclick = async () => {
 
       if (room.game.phase !== "draft_done") return;
 
-      const participants = [...(room.teams.blue||[]), ...(room.teams.red||[])]
-        .filter(pid => !!room.players[pid]);
+      const blueTeam = (room.teams.blue || []).filter(pid => !!room.players[pid]);
+      const redTeam  = (room.teams.red  || []).filter(pid => !!room.players[pid]);
 
-      if (participants.length < 1) return;
+      // 必须双方都有上场人员才分配“双卧底”
+      if (blueTeam.length < 1 || redTeam.length < 1) return;
 
-      const impostor = pickRandom(participants);
+      // 各队随机 1 个卧底
+      const blueUndercover = pickRandom(blueTeam);
+      const redUndercover  = pickRandom(redTeam);
 
       room.roles = {};
-      participants.forEach(pid => {
-        room.roles[pid] = (pid === impostor) ? "卧底" : "平民";
+      [...blueTeam, ...redTeam].forEach(pid => {
+        const isUndercover = (pid === blueUndercover) || (pid === redUndercover);
+        room.roles[pid] = isUndercover ? "卧底" : "平民";
       });
 
+      // 任务：只给卧底
+      //（默认允许两边抽到同任务；如果你想强制不同，我也能改）
+      room.missions = {};
+      const m1 = pickRandom(undercoverMissions);
+      const m2 = pickRandom(undercoverMissions);
+
+      if (blueUndercover) room.missions[blueUndercover] = m1 ? { ...m1 } : null;
+      if (redUndercover)  room.missions[redUndercover]  = m2 ? { ...m2 } : null;
+
+      // 确认表：只需要上场的人确认
       room.confirm = {};
-      participants.forEach(pid => room.confirm[pid] = false);
+      [...blueTeam, ...redTeam].forEach(pid => room.confirm[pid] = false);
 
       room.game.phase = "reveal";
       room.game.revealAt = now();
@@ -472,6 +503,7 @@ btnAssignRoles.onclick = async () => {
     alert("分配失败：" + (e?.message || e));
   }
 };
+
 
 // === 玩家：确认身份 ===
 btnConfirmRole.onclick = async () => {
@@ -766,7 +798,20 @@ function render(state){
       btnConfirmRole.disabled = true;
       revealHint.textContent = "只有上场的人需要确认";
     } else {
-      myRoleCard.innerHTML = `<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点“确认”。`;
+      const missions = state.missions || {};
+      const myMission = missions[myPlayerId];
+
+      if (myRole === "卧底" && myMission) {
+        myRoleCard.innerHTML =
+          `你的身份：<b style="font-size:18px;">卧底</b><br/>` +
+          `你的任务：<b>${escapeHtml(myMission.name)}</b><br/>` +
+          `<span style="color:#a7b7d6;">${escapeHtml(myMission.desc)}</span><br/>` +
+          `看清楚了就点“确认”。`;
+      } else {
+        myRoleCard.innerHTML =
+          `你的身份：<b style="font-size:18px;">${escapeHtml(myRole)}</b>”`;
+      }
+
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
       revealHint.textContent = confirm[myPlayerId] ? "你已确认，等待其他人" : "确认后无法更改";
     }
@@ -810,12 +855,13 @@ function render(state){
   const wCount = Object.keys(waitlist).length;
 
   if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。等待管理员`;
-  else if (phase === "draft") status.textContent = "选人进行中（名单/候补仍可查看）";
-  else if (phase === "draft_done") status.textContent = "选人结束（名单/候补仍可查看）";
-  else if (phase === "reveal") status.textContent = "身份阶段（名单/候补仍可查看）";
-  else if (phase === "teams") status.textContent = "队伍成员（名单/候补仍可查看）";
+  else if (phase === "draft") status.textContent = "选人进行中";
+  else if (phase === "draft_done") status.textContent = "选人结束";
+  else if (phase === "reveal") status.textContent = "身份阶段";
+  else if (phase === "teams") status.textContent = "队伍成员";
   else status.textContent = "状态不认识";
 }
+
 
 
 
