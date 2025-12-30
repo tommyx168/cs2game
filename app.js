@@ -620,7 +620,7 @@ function render(state){
   btnAssignRoles.disabled = (phase !== "draft_done");
 
   // ✅ 关键：候补/大厅名单永远显示
-  stageLobby.classList.remove("hidden");
+  stageLobby.classList.toggle("hidden", phase !== "lobby");
 
   // 其他阶段照常切换显示（不影响 stageLobby 常驻）
   stageDraft.classList.toggle("hidden", !(phase === "draft" || phase === "draft_done"));
@@ -817,4 +817,5 @@ function render(state){
   else if (phase === "teams") status.textContent = "队伍成员（名单/候补仍可查看）";
   else status.textContent = "状态不认识";
 }
+
 
