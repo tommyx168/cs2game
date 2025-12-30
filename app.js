@@ -276,6 +276,8 @@ btnGoDraft.onclick = async () => {
       return room;
     });
 
+    console.log("goDraft tx committed?", res.committed, "after:", res.snapshot?.val());
+    
     if (!res.committed) {
       alert("进入选人失败：条件不满足 / 有人没准备 / 人数不是偶数 / 或没有写入权限");
     }
@@ -427,4 +429,5 @@ function render(state){
     status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。`;
   }
 }
+
 
