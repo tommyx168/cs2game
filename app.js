@@ -50,6 +50,33 @@ const btnLeave  = $("btnLeave");
 const btnStart  = $("btnStart");
 const btnReset  = $("btnReset");
 const btnReady  = $("btnReady");
+const btnAdminEnter = $("btnAdminEnter");
+
+btnAdminEnter.onclick = () => {
+  // 跳转到管理员链接
+  location.href = `${location.origin}${location.pathname}?admin=${ADMIN_CODE}`;
+};
+
+btnGoDraft.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能操作");
+
+  const state = snapshotCache || {};
+  const players = state.players || {};
+  const ids = Object.keys(players);
+
+  const phase = state.game?.phase || "lobby";
+  if (phase !== "ready") return alert("必须先开始对局并进入准备阶段");
+
+  if (ids.length < 2) return alert("至少需要2个人");
+  if (ids.length % 2 !== 0) return alert("人数必须是偶数（两边人数相同）");
+
+  const allReady = ids.every(pid => players[pid]?.ready === true);
+  if (!allReady) return alert("还有人没准备");
+
+  // ✅ 满足条件 -> 进入选人阶段
+  await roomRef.child("game").update({ phase: "draft", draftAt: now() });
+};
+
 
 function showEntry(){
   entryPage.classList.remove("hidden");
