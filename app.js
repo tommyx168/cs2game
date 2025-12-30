@@ -1,4 +1,4 @@
-// app.js
+// app.js（修复版：删除 ready/准备 相关全部代码 + 恢复完整流程 + 去掉所有内部ID显示）
 const firebaseConfig = {
   apiKey: "AIzaSyB9Bygv0bF0pua7eaZrg0P7OKQxI7nQSSA",
   authDomain: "cs2wolf.firebaseapp.com",
@@ -19,7 +19,7 @@ const MAX_PLAYERS = 10;
 const MAX_WAIT = 4;
 const TEAM_CAP = 5;
 
-// 蛇形循环（适配人数不足：没得选就结束）
+// 蛇形循环（人数不足：没人可选就结束）
 const PICK_ORDER = ["blue","red","red","blue","blue","red","red","blue"];
 
 const $ = (id) => document.getElementById(id);
@@ -41,7 +41,6 @@ function escapeHtml(s){
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#39;");
 }
-function shortPid(pid){ return (pid || "").slice(0, 8); }
 function pickRandom(list){
   if (!list.length) return null;
   return list[Math.floor(Math.random() * list.length)];
@@ -57,6 +56,7 @@ let snapshotCache = null;
 $("roomTitle").textContent = roomId;
 $("adminHint").classList.toggle("hidden", !isAdmin());
 
+// UI refs
 const entryPage = $("entryPage");
 const roomPage  = $("roomPage");
 
@@ -114,7 +114,7 @@ async function safeRemoveMe(){
 
 btnJoin.onclick = async () => {
   const displayName = $("playerInput").value.trim();
-  if (!displayName) return alert("请填写名字+段位（例：123 fc4）");
+  if (!displayName) return alert("先填名字（例：xGonv AK）");
 
   const me = { id: myPlayerId, displayName, joinedAt: now() };
 
@@ -145,21 +145,21 @@ btnJoin.onclick = async () => {
       return room;
     }
 
-    // 大厅优先
+    // lobby：优先进大厅
     if (pCount < MAX_PLAYERS) {
       room.players[myPlayerId] = me;
       return room;
     }
+
     // 满了去候补
     if (wCount < MAX_WAIT) room.waitlist[myPlayerId] = me;
     return room;
   });
 
-  if (!result.committed) return alert("进房失败，请刷新");
+  if (!result.committed) return alert("进房失败，刷新再试。");
 
   roomRef.child(`players/${myPlayerId}`).onDisconnect().remove();
   roomRef.child(`waitlist/${myPlayerId}`).onDisconnect().remove();
-
   showRoom();
 };
 
@@ -172,19 +172,19 @@ btnLeave.onclick = async () => {
 
 btnSwitch.onclick = async () => {
   const state = snapshotCache || {};
-  const rawPhase = state.game?.phase || "lobby";
-  const phase = ["lobby"].includes(rawPhase) ? rawPhase : rawPhase; // 不做兜底，直接按真实阶段锁
+  const phase = state.game?.phase || "lobby";
 
   const players = state.players || {};
   const waitlist = state.waitlist || {};
+
   const inPlayers = !!players[myPlayerId];
   const inWait = !!waitlist[myPlayerId];
   if (!inPlayers && !inWait) return;
 
-  if (phase !== "lobby") return alert("流程进行中");
+  if (phase !== "lobby") return alert("流程进行中，切换锁死了🤣");
 
   if (inWait) {
-    if (Object.keys(players).length >= MAX_PLAYERS) return alert("大厅已满");
+    if (Object.keys(players).length >= MAX_PLAYERS) return alert("大厅满了，进不去");
     await roomRef.transaction((room) => {
       room = room || {};
       room.players = room.players || {};
@@ -199,7 +199,7 @@ btnSwitch.onclick = async () => {
   }
 
   if (inPlayers) {
-    if (Object.keys(waitlist).length >= MAX_WAIT) return alert("候补已满");
+    if (Object.keys(waitlist).length >= MAX_WAIT) return alert("候补满了");
     await roomRef.transaction((room) => {
       room = room || {};
       room.players = room.players || {};
@@ -216,7 +216,7 @@ btnSwitch.onclick = async () => {
 btnAdminPeek.onclick = () => {
   if (!isAdmin()) return;
   adminPeekOn = !adminPeekOn;
-  btnAdminPeek.textContent = adminPeekOn ? "管理员查看信息：开" : "管理员查看信息（关）";
+  btnAdminPeek.textContent = adminPeekOn ? "查看身份（开）" : "查看身份（关）";
   render(snapshotCache || {});
 };
 
@@ -238,18 +238,17 @@ btnReset.onclick = async () => {
 
       return room;
     });
-    if (!res.committed) alert("重置失败");
+    if (!res.committed) alert("重置失败：可能没写权限");
   } catch (e) {
     alert("重置失败：" + (e?.message || e));
   }
 };
 
 btnStartDraft.onclick = async () => {
-  if (!isAdmin()) return alert("请等待管理员");
+  if (!isAdmin()) return alert("只有管理员能开始选人");
 
   const phase = snapshotCache?.game?.phase || "lobby";
-  if (phase === "draft" || phase === "draft_done") return alert("已经在选人流程里了");
-  if (phase !== "lobby") return alert("当前不是大厅阶段，先一键重置");
+  if (phase !== "lobby") return alert("当前不是大厅阶段，先点【一键重置】回到大厅。");
 
   try {
     const res = await roomRef.transaction((room) => {
@@ -288,7 +287,7 @@ btnStartDraft.onclick = async () => {
       room.game.phase = "draft";
       room.game.draftAt = now();
 
-      // 1人/2人：等待区为空，直接结束选人，等管理员分配身份
+      // 1人/2人：没人可选就直接结束选人
       const inTeam = new Set([blueCaptain, redCaptain].filter(Boolean));
       const waiting = ids.filter(pid => !inTeam.has(pid));
       if (waiting.length === 0) {
@@ -300,32 +299,27 @@ btnStartDraft.onclick = async () => {
       return room;
     });
 
-    console.log("startDraft committed?", res.committed, "after:", res.snapshot?.val());
-    if (!res.committed) alert("失败：阶段不对/没权限/大厅没人");
+    if (!res.committed) alert("开始选人失败：可能没写权限/或大厅没人");
   } catch (e) {
-    alert("失败：" + (e?.message || e));
+    alert("开始选人失败：" + (e?.message || e));
   }
 };
 
 async function captainPick(targetPid){
   const state = snapshotCache || {};
-  const phase = state.game?.phase || "lobby";
-  if (phase !== "draft") return;
+  if ((state.game?.phase || "lobby") !== "draft") return;
 
   const draft = state.draft || {};
   const teams = state.teams || { blue:[], red:[] };
   const players = state.players || {};
   const captains = draft.captains || {};
 
-  const blueCaptain = captains.blue;
-  const redCaptain  = captains.red;
   const turn = draft.turn;
+  const myIsBlueCaptain = (myPlayerId === captains.blue);
+  const myIsRedCaptain  = (myPlayerId === captains.red);
 
-  const myIsBlueCaptain = (myPlayerId === blueCaptain);
-  const myIsRedCaptain  = (myPlayerId === redCaptain);
-
-  if (turn === "blue" && !myIsBlueCaptain) return alert("别急");
-  if (turn === "red"  && !myIsRedCaptain) return alert("别急");
+  if (turn === "blue" && !myIsBlueCaptain) return alert("还没轮到你🤣");
+  if (turn === "red"  && !myIsRedCaptain)  return alert("还没轮到你🤣");
 
   if (!players[targetPid]) return;
   if ((teams.blue||[]).includes(targetPid) || (teams.red||[]).includes(targetPid)) return;
@@ -346,14 +340,13 @@ async function captainPick(targetPid){
     let turn = room.draft.turn || "blue";
 
     if (turn === "blue" && myPlayerId !== captains.blue) return;
-    if (turn === "red"  && myPlayerId !== captains.red) return;
+    if (turn === "red"  && myPlayerId !== captains.red)  return;
 
     const blueArr = room.teams.blue || [];
     const redArr  = room.teams.red  || [];
 
     if (blueArr.includes(targetPid) || redArr.includes(targetPid)) return;
 
-    // 目标必须还在等待区
     const allIds = Object.keys(room.players);
     const inTeam = new Set([...blueArr, ...redArr]);
     const waiting = allIds.filter(pid => !inTeam.has(pid));
@@ -362,7 +355,6 @@ async function captainPick(targetPid){
     const blueFull = blueArr.length >= TEAM_CAP;
     const redFull  = redArr.length  >= TEAM_CAP;
 
-    // 如果本队满了，自动塞到另一队（另一队有空才塞）
     if (turn === "blue") {
       if (!blueFull) blueArr.push(targetPid);
       else if (!redFull) redArr.push(targetPid);
@@ -376,15 +368,12 @@ async function captainPick(targetPid){
     room.teams.blue = blueArr;
     room.teams.red  = redArr;
 
-    // 推进 pickIndex
     pickIndex += 1;
     room.draft.pickIndex = pickIndex;
 
-    // 重新计算等待区
     const inTeam2 = new Set([...blueArr, ...redArr]);
     const waiting2 = allIds.filter(pid => !inTeam2.has(pid));
 
-    // 没人可选 / 两边满了：结束选人
     if (waiting2.length === 0 || (blueArr.length >= TEAM_CAP && redArr.length >= TEAM_CAP)) {
       room.draft.turn = null;
       room.game.phase = "draft_done";
@@ -392,7 +381,7 @@ async function captainPick(targetPid){
       return room;
     }
 
-    // 找下一个可用轮次（跳过队满或队长不存在的一侧）
+    // 找下一个可用轮次（跳过队满/队长不存在的一侧）
     let nextTurn = null;
     for (let guard=0; guard<50; guard++){
       const t = order[pickIndex % order.length] || "blue";
@@ -420,7 +409,6 @@ async function captainPick(targetPid){
 
 btnAssignRoles.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能分配身份");
-
   const phase = snapshotCache?.game?.phase || "lobby";
   if (phase !== "draft_done") return alert("先把人选完（或等待区没人了）再分配身份");
 
@@ -438,11 +426,12 @@ btnAssignRoles.onclick = async () => {
 
       if (participants.length < 1) return;
 
+      // 简化：全员里随机 1 个当“内鬼”，其余好人（后续你要每队一个内鬼我再按规则改）
       const impostor = pickRandom(participants);
 
       room.roles = {};
       participants.forEach(pid => {
-        room.roles[pid] = (pid === impostor) ? "内鬼" : "好人";
+        room.roles[pid] = (pid === impostor) ? "卧底" : "平民";
       });
 
       room.confirm = {};
@@ -453,8 +442,7 @@ btnAssignRoles.onclick = async () => {
       return room;
     });
 
-    console.log("assignRoles committed?", res.committed);
-    if (!res.committed) alert("分配失败：阶段不对/或没写权限");
+    if (!res.committed) alert("分配失败：可能没写权限/或阶段不对");
   } catch (e) {
     alert("分配失败：" + (e?.message || e));
   }
@@ -465,19 +453,18 @@ btnConfirmRole.onclick = async () => {
   if (phase !== "reveal") return;
 
   const roles = snapshotCache?.roles || {};
-  if (!roles[myPlayerId]) return alert("对局以开");
+  if (!roles[myPlayerId]) return alert("你这把没上场（没身份），不用确认");
 
   await roomRef.child(`confirm/${myPlayerId}`).set(true);
 };
 
 async function maybeAdvanceToTeams(state){
-  const phase = state.game?.phase || "lobby";
-  if (phase !== "reveal") return;
+  if ((state.game?.phase || "lobby") !== "reveal") return;
 
   const roles = state.roles || {};
   const confirm = state.confirm || {};
   const participants = Object.keys(roles);
-  if (participants.length === 0) return;
+  if (!participants.length) return;
 
   const allConfirmed = participants.every(pid => confirm[pid] === true);
   if (!allConfirmed) return;
@@ -490,7 +477,7 @@ async function maybeAdvanceToTeams(state){
     const roles = room.roles || {};
     const confirm = room.confirm || {};
     const participants = Object.keys(roles);
-    if (participants.length === 0) return;
+    if (!participants.length) return;
 
     const allConfirmed = participants.every(pid => confirm[pid] === true);
     if (!allConfirmed) return;
@@ -546,14 +533,13 @@ function renderTeamSlots(container, list, players, colorClass){
     const slot = document.createElement("div");
     if (!pid) {
       slot.className = "slot empty";
-      slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div><div class="slotSub">—</div></div>`;
+      slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div></div>`;
     } else {
       const p = players[pid];
       slot.className = `slot ${colorClass}`;
       slot.innerHTML = `
         <div class="slotLeft">
           <div class="slotName">${escapeHtml(p?.displayName || pid)}</div>
-          <div class="slotSub">${shortPid(pid)}</div>
         </div>
       `;
     }
@@ -568,20 +554,22 @@ function render(state){
 
   const inPlayers = !!players[myPlayerId];
   const inWait    = !!waitlist[myPlayerId];
+
   if (inPlayers || inWait) showRoom(); else showEntry();
 
   $("roleBadge").textContent = isAdmin() ? "管理员" : (inWait ? "候补" : "大厅");
   $("adminPanel").classList.toggle("hidden", !isAdmin());
 
+  // ✅ 只显示名字，不要任何内部ID
   const meObj = players[myPlayerId] || waitlist[myPlayerId];
-  $("meLine").textContent = meObj ? `你是：${meObj.displayName}（内部ID：${shortPid(myPlayerId)}）` : "";
+  $("meLine").textContent = meObj ? `你是：${meObj.displayName}` : "";
 
   // 按阶段决定是否显示切换
   const showSwitch = (inPlayers || inWait) && (phase === "lobby");
   btnSwitch.classList.toggle("hidden", !showSwitch);
   if (showSwitch) btnSwitch.textContent = inWait ? "切换到大厅" : "切换到候补";
 
-  // 管理员按钮显示
+  // 管理员按钮
   btnStartDraft.classList.toggle("hidden", !isAdmin());
   btnAssignRoles.classList.toggle("hidden", !isAdmin());
   btnStartDraft.disabled = (phase !== "lobby");
@@ -593,7 +581,7 @@ function render(state){
   stageReveal.classList.toggle("hidden", phase !== "reveal");
   stageTeams.classList.toggle("hidden", phase !== "teams");
 
-  // 大厅渲染
+  // 大厅渲染（不显示任何ID）
   if (phase === "lobby") {
     const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
     const grid = $("playerGrid");
@@ -603,14 +591,13 @@ function render(state){
       const slot = document.createElement("div");
       if (!pid) {
         slot.className = "slot empty";
-        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div><div class="slotSub">—</div></div>`;
+        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div></div>`;
       } else {
         const p = players[pid];
         slot.className = "slot";
         slot.innerHTML = `
           <div class="slotLeft">
             <div class="slotName">${escapeHtml(p.displayName || pid)}</div>
-            <div class="slotSub">${shortPid(pid)}</div>
           </div>
         `;
         if (isAdmin()) {
@@ -632,14 +619,13 @@ function render(state){
       const slot = document.createElement("div");
       if (!pid) {
         slot.className = "slot empty";
-        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空候补</div><div class="slotSub">—</div></div>`;
+        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空候补</div></div>`;
       } else {
         const p = waitlist[pid];
         slot.className = "slot";
         slot.innerHTML = `
           <div class="slotLeft">
             <div class="slotName">${escapeHtml(p.displayName || pid)}</div>
-            <div class="slotSub">${shortPid(pid)}</div>
           </div>
         `;
         if (isAdmin()) {
@@ -659,8 +645,6 @@ function render(state){
     const draft = state.draft || {};
     const teams = state.teams || { blue:[], red:[] };
     const captains = draft.captains || {};
-    const blueCaptain = captains.blue;
-    const redCaptain  = captains.red;
 
     const blueList = teams.blue || [];
     const redList  = teams.red  || [];
@@ -668,15 +652,14 @@ function render(state){
     renderTeamSlots(blueTeamBox, blueList, players, "blue");
     renderTeamSlots(redTeamBox,  redList,  players, "red");
 
-    // 等待区 = 大厅里没在队伍的人
     waitingBox.innerHTML = "";
     const allIds = Object.keys(players);
     const inTeam = new Set([...blueList, ...redList]);
     const waiting = allIds.filter(pid => !inTeam.has(pid));
 
     const turn = draft.turn; // "blue"|"red"|null
-    const myIsBlueCaptain = (myPlayerId === blueCaptain);
-    const myIsRedCaptain  = (myPlayerId === redCaptain);
+    const myIsBlueCaptain = (myPlayerId === captains.blue);
+    const myIsRedCaptain  = (myPlayerId === captains.red);
 
     waiting.forEach(pid => {
       const p = players[pid];
@@ -685,7 +668,6 @@ function render(state){
       slot.innerHTML = `
         <div class="slotLeft">
           <div class="slotName">${escapeHtml(p?.displayName || pid)}</div>
-          <div class="slotSub">${shortPid(pid)}</div>
         </div>
       `;
 
@@ -703,63 +685,52 @@ function render(state){
       waitingBox.appendChild(slot);
     });
 
-    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "蓝队选人" : "—";
-    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "红队选人" : "—";
+    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "轮到蓝队长" : "—";
+    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "轮到红队长" : "—";
 
     pickHint.textContent = (phase === "draft_done")
-      ? "选人结束请等待管理员"
-      : (turn ? (turn === "blue" ? "现在蓝队选人" : "现在红队选人") : "—");
+      ? "选人结束：等管理员点【分配身份】"
+      : (turn ? (turn === "blue" ? "现在：蓝队点人" : "现在：红队点人") : "—");
 
-    const blueCapName = players[blueCaptain]?.displayName || (blueCaptain ? shortPid(blueCaptain) : "—");
-    const redCapName  = players[redCaptain]?.displayName  || (redCaptain ? shortPid(redCaptain) : "—");
+    const blueCapName = players[captains.blue]?.displayName || "—";
+    const redCapName  = players[captains.red]?.displayName  || "—";
 
-    let text = `蓝队队长【${escapeHtml(blueCapName)}】`;
-    text += redCaptain ? `，红队队长【${escapeHtml(redCapName)}】。` : `无红队队长`;
+    let text = `队长：蓝队【${escapeHtml(blueCapName)}】`;
+    text += captains.red ? `，红队【${escapeHtml(redCapName)}】。` : `（人数太少，暂时没红队长🤣）`;
+    text += ` 等待区没人了就算选完。`;
 
     if (isAdmin() && adminPeekOn) {
       text += `\n（管理员查看）phase=${phase} turn=${turn} pickIndex=${draft.pickIndex}`;
-      text += ` blueCap=${shortPid(blueCaptain)} redCap=${redCaptain ? shortPid(redCaptain) : "null"}`;
     }
 
     draftHelpText.textContent = text;
   }
 
-  // 身份确认渲染
+  // 身份确认
   if (phase === "reveal") {
     const roles = state.roles || {};
     const confirm = state.confirm || {};
-    const teams = state.teams || { blue:[], red:[] };
 
     const participants = Object.keys(roles);
     const allConfirmed = participants.length > 0 && participants.every(pid => confirm[pid] === true);
 
-    revealStatus.textContent = allConfirmed ? "请进行确认" : "看完自己身份后确认";
+    revealStatus.textContent = allConfirmed ? "大家都确认了，马上进名单页" : "看完身份点确认";
 
     const myRole = roles[myPlayerId];
     const inMatch = !!myRole;
 
     if (!inMatch) {
-      myRoleCard.innerHTML = `你这把没上场`;
+      myRoleCard.innerHTML = `你这把没上场（没被选进队），没有身份。`;
       btnConfirmRole.disabled = true;
-      revealHint.textContent = "提示：只有场上需要确认";
+      revealHint.textContent = "只有上场的人需要确认。";
     } else {
-      myRoleCard.innerHTML = `你这把的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清后请“确认”`;
+      myRoleCard.innerHTML = `你的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点“确认”。`;
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
-      revealHint.textContent = confirm[myPlayerId] ? "你已确认，等带其他人中" : "确认后无法更改";
-    }
-
-    if (isAdmin() && adminPeekOn) {
-      const blue = teams.blue || [];
-      const red  = teams.red || [];
-      const lines = [];
-      lines.push("（管理员查看）身份表：");
-      blue.forEach(pid => lines.push(`蓝：${players[pid]?.displayName || shortPid(pid)} = ${roles[pid] || "无"}`));
-      red.forEach(pid => lines.push(`红：${players[pid]?.displayName || shortPid(pid)} = ${roles[pid] || "无"}`));
-      revealHint.textContent += "\n" + lines.join("\n");
+      revealHint.textContent = confirm[myPlayerId] ? "你已确认，等其他人。" : "确认后不能反悔（要重来让管理员重置）。";
     }
   }
 
-  // 名单页渲染（只显示成员）
+  // 名单页（只显示名字）
   if (phase === "teams") {
     const teams = state.teams || { blue:[], red:[] };
     const blue = teams.blue || [];
@@ -774,7 +745,6 @@ function render(state){
       div.innerHTML = `
         <div class="slotLeft">
           <div class="slotName">${escapeHtml(players[pid]?.displayName || pid)}</div>
-          <div class="slotSub">${shortPid(pid)}</div>
         </div>
       `;
       teamsBlueOnly.appendChild(div);
@@ -786,7 +756,6 @@ function render(state){
       div.innerHTML = `
         <div class="slotLeft">
           <div class="slotName">${escapeHtml(players[pid]?.displayName || pid)}</div>
-          <div class="slotSub">${shortPid(pid)}</div>
         </div>
       `;
       teamsRedOnly.appendChild(div);
@@ -798,18 +767,10 @@ function render(state){
   const pCount = Object.keys(players).length;
   const wCount = Object.keys(waitlist).length;
 
-  if (phase === "lobby") {
-    status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员想开就直接点【开搞选人】。`;
-  } else if (phase === "draft") {
-    status.textContent = "选人进行中";
-  } else if (phase === "draft_done") {
-    status.textContent = "选人结束请等候";
-  } else if (phase === "reveal") {
-    status.textContent = "身份确认";
-  } else if (phase === "teams") {
-    status.textContent = "双方成员";
-  } else {
-    status.textContent = "状态不确定请call管理员";
-  }
+  if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员点【开始选人】就开搞。`;
+  else if (phase === "draft") status.textContent = "选人进行中：轮到队长就从等待区点人。";
+  else if (phase === "draft_done") status.textContent = "选人结束：等管理员点【分配身份】。";
+  else if (phase === "reveal") status.textContent = "身份阶段：上场的人确认自己的身份。";
+  else if (phase === "teams") status.textContent = "名单页：只显示双方成员。";
+  else status.textContent = "状态不认识：让管理员点【一键重置】。";
 }
-
