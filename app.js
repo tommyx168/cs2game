@@ -200,53 +200,67 @@ btnStartDraft.onclick = async () => {
     const res = await roomRef.transaction((room) => {
       room = room || {};
       room.players = room.players || {};
+      room.waitlist = room.waitlist || {};
       room.game = room.game || { phase: "lobby" };
 
       // 只允许从 lobby 进入
       if ((room.game.phase || "lobby") !== "lobby") return;
 
+      const ids = Object.keys(room.players);
+      if (ids.length < 1) return; // 大厅至少得有1个人
+
+      // ====== 随机队长（人数>=2才有红队长，否则红队长为 null）======
+      const blueCaptain = ids[Math.floor(Math.random() * ids.length)];
+      let redCaptain = null;
+      if (ids.length >= 2) {
+        const rest = ids.filter(x => x !== blueCaptain);
+        redCaptain = rest[Math.floor(Math.random() * rest.length)];
+      }
+
+      // ====== 初始化队伍：队长直接进队，置顶 ======
+      room.teams = {
+        blue: blueCaptain ? [blueCaptain] : [],
+        red: redCaptain ? [redCaptain] : []
+      };
+
+      // ====== 初始化选人信息（蛇形循环顺序）=====
+      const PICK_ORDER = ["blue","red","red","blue","blue","red","red","blue"];
+      room.draft = {
+        captains: { blue: blueCaptain, red: redCaptain },
+        order: PICK_ORDER,
+        pickIndex: 0,
+        turn: "blue", // 永远蓝先
+        startedAt: now()
+      };
+
+      // 清掉后续流程残留（如果上局有）
+      room.roles = null;
+      room.confirm = null;
+
+      // ====== 进入选人阶段 ======
       room.game.phase = "draft";
       room.game.draftAt = now();
+
+      // ====== 关键：如果等待区没人（1人/2人），直接结束选人 ======
+      const inTeam = new Set([blueCaptain, redCaptain].filter(Boolean));
+      const waiting = ids.filter(pid => !inTeam.has(pid));
+
+      if (waiting.length === 0) {
+        room.game.phase = "draft_done";
+        room.game.draftDoneAt = now();
+        room.draft.turn = null;
+      }
+
       return room;
     });
 
-    if (!res.committed) alert("开搞失败：可能阶段不对/或没写权限");
+    console.log("startDraft committed?", res.committed, "after:", res.snapshot?.val());
+    if (!res.committed) alert("开搞失败：可能阶段不对/或没写权限/或大厅没人");
   } catch (e) {
     alert("开搞失败：" + (e?.message || e));
   }
 };
 
-// 管理员：重置 -> lobby
-btnReset.onclick = async () => {
-  if (!isAdmin()) return alert("只有管理员能重置");
-  await roomRef.transaction((room) => {
-    room = room || {};
-    room.players = room.players || {};
-    room.waitlist = room.waitlist || {};
-    room.kicked = room.kicked || {};
-    room.game = { phase: "lobby", resetAt: now() };
-    return room;
-  });
-};
-
-// 踢人（管理员）
-async function kickPlayer(pid){
-  if (!isAdmin()) return alert("只有管理员能踢人");
-  const name = snapshotCache?.players?.[pid]?.displayName || snapshotCache?.waitlist?.[pid]?.displayName || pid;
-  const ok = confirm(`确定踢出：${name}？`);
-  if (!ok) return;
-
-  await roomRef.transaction((room) => {
-    room = room || {};
-    room.players = room.players || {};
-    room.waitlist = room.waitlist || {};
-    room.kicked = room.kicked || {};
-    room.kicked[pid] = { at: now(), by: myPlayerId };
-    delete room.players[pid];
-    delete room.waitlist[pid];
-    return room;
-  });
-}
 
 // 监听渲染 + 被踢
 roomRef.on("value", async (snap) => {
@@ -361,3 +375,4 @@ function render(state){
     status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员想开就直接点【开搞选人】。`;
   }
 }
+
