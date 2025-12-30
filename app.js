@@ -77,8 +77,6 @@ let myToken = localStorage.getItem("cs2_site_token") || uid();
 localStorage.setItem("cs2_site_token", myToken);
 
 // 房主密钥：只有房主本机有（用于“只有你能控制”）
-let myHostKey = localStorage.getItem("cs2_site_hostKey") || uid();
-localStorage.setItem("cs2_site_hostKey", myHostKey);
 
 /***************
  * 4) 自动房间 + 监听
@@ -180,15 +178,15 @@ btnJoin.onclick = async () => {
   });
 
   // 如果没有房主：把当前用户设为房主，并写入 hostKey（只有本机知道）
-  const hostSnap = await roomRef.child("hostId").get();
-  if (!hostSnap.exists()) {
-    await roomRef.update({
-      hostId: myPlayerId,
-      hostKey: myHostKey,
-      phase: "lobby",
-      createdAt: Date.now()
-    });
-  }
+const hostSnap = await roomRef.child("hostId").get();
+if (!hostSnap.exists()) {
+  await roomRef.update({
+    hostId: myPlayerId,
+    phase: "lobby",
+    createdAt: Date.now()
+  });
+}
+
 
   showRoom();
 };
@@ -476,7 +474,7 @@ async function finalizeAndAssignSpies(state, d) {
  ***************/
 function isHost(state) {
   if (!state) return false;
-  return state.hostId === myPlayerId && state.hostKey === myHostKey;
+  return state.hostId === myPlayerId;
 }
 
 /***************
