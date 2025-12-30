@@ -1,7 +1,6 @@
 :root{
   --bg0:#070a10;
   --bg1:#0b1220;
-  --card:#0e1626;
   --border:#22334a;
   --text:#eaf1ff;
   --muted:rgba(234,241,255,.72);
@@ -45,7 +44,6 @@ body{
   box-shadow: 0 10px 35px rgba(0,0,0,.35);
   backdrop-filter: blur(6px);
 }
-
 .panel{ width:min(820px, 100%); padding:22px; }
 .card{ padding:18px; margin:12px 0; }
 
@@ -82,6 +80,7 @@ button{
   cursor:pointer;
 }
 button:disabled{ opacity:.45; cursor:not-allowed; }
+
 button.primary{
   border-color: rgba(110,168,255,.65);
   background: linear-gradient(180deg, rgba(60,120,255,.35), rgba(20,32,56,.85));
@@ -89,6 +88,10 @@ button.primary{
 button.danger{
   border-color: rgba(255,107,107,.55);
   background: linear-gradient(180deg, rgba(255,107,107,.22), rgba(30,18,22,.85));
+}
+button.ghost{
+  border-color: rgba(110,168,255,.35);
+  background: rgba(7,10,16,.20);
 }
 
 .hint{ color:var(--muted); font-size:12px; line-height:1.5; }
@@ -142,7 +145,7 @@ button.danger{
   color: var(--muted);
 }
 
-/* 左5右5：两列，每列5个细长条 */
+/* 左5右5：两列（每列5条），细长条 */
 .slots{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -154,13 +157,11 @@ button.danger{
   border:1px solid rgba(34,51,74,.95);
   background: linear-gradient(180deg, rgba(17,28,48,.70), rgba(7,10,16,.35));
   border-radius:14px;
-  padding:10px 12px;
-  height: 44px !important;
-  padding: 6px 10px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-
+  padding:6px 10px;
+  height: 44px;      /* 细！ */
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
 }
 
 .slot.empty{ opacity:.45; }
@@ -168,19 +169,19 @@ button.danger{
 .slotLeft{
   display:flex;
   flex-direction:column;
-  gap:4px;
+  gap:2px;
   min-width: 0;
 }
 .slotName{
   font-weight:900;
-  font-size:14px;
-  line-height:1.15;
+  font-size:13px;
+  line-height:1.1;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
 }
 .slotSub{
-  font-size:12px;
+  font-size:11px;
   opacity:.70;
   white-space:nowrap;
   overflow:hidden;
@@ -192,6 +193,7 @@ button.danger{
   border-color: var(--ready-br);
 }
 
+/* 分队颜色预留（你分队后写 state.teams 再上色） */
 .slot.blue{
   background: linear-gradient(180deg, var(--blue-bg), rgba(7,10,16,.25));
   border-color: var(--blue-br);
@@ -202,10 +204,10 @@ button.danger{
 }
 
 .kickBtn{
-  width:30px;
-  height:30px;
+  width:28px;
+  height:28px;
   padding:0;
-  border-radius:12px;
+  border-radius:10px;
   border:1px solid rgba(255,107,107,.55);
   background: rgba(255,107,107,.12);
   color: rgba(255,107,107,.95);
@@ -216,7 +218,7 @@ button.danger{
   line-height:1;
 }
 
-/* 候补：4个细条 */
+/* 候补：4条 */
 .waitSlots{
   display:grid;
   grid-template-columns: repeat(4, 1fr);
@@ -225,4 +227,3 @@ button.danger{
 @media (max-width: 860px){
   .waitSlots{ grid-template-columns: repeat(2, 1fr); }
 }
-
