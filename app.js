@@ -484,11 +484,29 @@ btnAssignRoles.onclick = async () => {
       // 任务：只给卧底
       //（默认允许两边抽到同任务；如果你想强制不同，我也能改）
       room.missions = {};
-      const m1 = pickRandom(undercoverMissions);
-      const m2 = pickRandom(undercoverMissions);
 
-      if (blueUndercover) room.missions[blueUndercover] = m1 ? { ...m1 } : null;
-      if (redUndercover)  room.missions[redUndercover]  = m2 ? { ...m2 } : null;
+      // 兜底：任务表不能为空
+      const pool = Array.isArray(undercoverMissions) ? undercoverMissions.filter(Boolean) : [];
+
+      // 如果你担心未来任务表被清空，这里给一个必有的默认任务
+      const DEFAULT_MISSION = { name: "临时任务", desc: "任务列表为空，请联系管理员补充任务库。" };
+
+      let m1 = pickRandom(pool) || DEFAULT_MISSION;
+      let m2 = pickRandom(pool) || DEFAULT_MISSION;
+
+      // 尽量让两边不抽到同一个任务（任务>=2时）
+      if (pool.length >= 2) {
+        let guard = 0;
+        while (m2 && m1 && m2.name === m1.name && guard < 20) {
+          m2 = pickRandom(pool) || DEFAULT_MISSION;
+          guard++;
+        }
+      }
+
+// ✅ 强制写入：两个卧底一定有任务（不会写 null）
+room.missions[blueUndercover] = { ...m1 };
+room.missions[redUndercover]  = { ...m2 };
+
 
       // 确认表：只需要上场的人确认
       room.confirm = {};
@@ -862,6 +880,7 @@ function render(state){
   else if (phase === "teams") status.textContent = "队伍成员";
   else status.textContent = "状态不认识";
 }
+
 
 
 
