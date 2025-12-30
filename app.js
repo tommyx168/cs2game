@@ -181,10 +181,10 @@ btnSwitch.onclick = async () => {
   const inWait = !!waitlist[myPlayerId];
   if (!inPlayers && !inWait) return;
 
-  if (phase !== "lobby") return alert("流程进行中，切换锁死了🤣");
+  if (phase !== "lobby") return alert("流程进行中");
 
   if (inWait) {
-    if (Object.keys(players).length >= MAX_PLAYERS) return alert("大厅满了，进不去");
+    if (Object.keys(players).length >= MAX_PLAYERS) return alert("大厅已满");
     await roomRef.transaction((room) => {
       room = room || {};
       room.players = room.players || {};
@@ -248,7 +248,7 @@ btnStartDraft.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能开始选人");
 
   const phase = snapshotCache?.game?.phase || "lobby";
-  if (phase !== "lobby") return alert("当前不是大厅阶段，先点【一键重置】回到大厅。");
+  if (phase !== "lobby") return alert("当前不是大厅阶段，请点一键重置回到大厅");
 
   try {
     const res = await roomRef.transaction((room) => {
@@ -318,8 +318,8 @@ async function captainPick(targetPid){
   const myIsBlueCaptain = (myPlayerId === captains.blue);
   const myIsRedCaptain  = (myPlayerId === captains.red);
 
-  if (turn === "blue" && !myIsBlueCaptain) return alert("还没轮到你🤣");
-  if (turn === "red"  && !myIsRedCaptain)  return alert("还没轮到你🤣");
+  if (turn === "blue" && !myIsBlueCaptain) return alert("还没轮到你");
+  if (turn === "red"  && !myIsRedCaptain)  return alert("还没轮到你");
 
   if (!players[targetPid]) return;
   if ((teams.blue||[]).includes(targetPid) || (teams.red||[]).includes(targetPid)) return;
@@ -410,7 +410,7 @@ async function captainPick(targetPid){
 btnAssignRoles.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能分配身份");
   const phase = snapshotCache?.game?.phase || "lobby";
-  if (phase !== "draft_done") return alert("先把人选完（或等待区没人了）再分配身份");
+  if (phase !== "draft_done") return alert("选完后分配身份");
 
   try {
     const res = await roomRef.transaction((room) => {
@@ -453,7 +453,7 @@ btnConfirmRole.onclick = async () => {
   if (phase !== "reveal") return;
 
   const roles = snapshotCache?.roles || {};
-  if (!roles[myPlayerId]) return alert("你这把没上场（没身份），不用确认");
+  if (!roles[myPlayerId]) return alert("你这把没上场");
 
   await roomRef.child(`confirm/${myPlayerId}`).set(true);
 };
@@ -685,19 +685,18 @@ function render(state){
       waitingBox.appendChild(slot);
     });
 
-    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "轮到蓝队长" : "—";
-    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "轮到红队长" : "—";
+    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "轮到蓝方" : "—";
+    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "轮到红方" : "—";
 
     pickHint.textContent = (phase === "draft_done")
-      ? "选人结束：等管理员点【分配身份】"
-      : (turn ? (turn === "blue" ? "现在：蓝队点人" : "现在：红队点人") : "—");
+      ? "选人结束"
+      : (turn ? (turn === "blue" ? "蓝队选人" : "红队选人") : "—");
 
     const blueCapName = players[captains.blue]?.displayName || "—";
     const redCapName  = players[captains.red]?.displayName  || "—";
 
     let text = `队长：蓝队【${escapeHtml(blueCapName)}】`;
-    text += captains.red ? `，红队【${escapeHtml(redCapName)}】。` : `（人数太少，暂时没红队长🤣）`;
-    text += ` 等待区没人了就算选完。`;
+    text += captains.red ? `，红队【${escapeHtml(redCapName)}】。` : `（无红队队长）`;
 
     if (isAdmin() && adminPeekOn) {
       text += `\n（管理员查看）phase=${phase} turn=${turn} pickIndex=${draft.pickIndex}`;
@@ -714,19 +713,19 @@ function render(state){
     const participants = Object.keys(roles);
     const allConfirmed = participants.length > 0 && participants.every(pid => confirm[pid] === true);
 
-    revealStatus.textContent = allConfirmed ? "大家都确认了，马上进名单页" : "看完身份点确认";
+    revealStatus.textContent = allConfirmed ? "请确认" : "看完身份请点确认";
 
     const myRole = roles[myPlayerId];
     const inMatch = !!myRole;
 
     if (!inMatch) {
-      myRoleCard.innerHTML = `你这把没上场（没被选进队），没有身份。`;
+      myRoleCard.innerHTML = `你这把没上场`;
       btnConfirmRole.disabled = true;
-      revealHint.textContent = "只有上场的人需要确认。";
+      revealHint.textContent = "只有上场的人需要确认";
     } else {
       myRoleCard.innerHTML = `你的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点“确认”。`;
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
-      revealHint.textContent = confirm[myPlayerId] ? "你已确认，等其他人。" : "确认后不能反悔（要重来让管理员重置）。";
+      revealHint.textContent = confirm[myPlayerId] ? "你已确认，等待其他人" : "确认后无法更改";
     }
   }
 
@@ -774,4 +773,5 @@ function render(state){
   else if (phase === "teams") status.textContent = "队伍成员";
   else status.textContent = "状态不认识";
 }
+
 
