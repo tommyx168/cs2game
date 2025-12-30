@@ -11,28 +11,16 @@
   <!-- 进房页 -->
   <div id="entryPage" class="center">
     <div class="panel">
-      <div class="h1">CS2《谁是卧底》 (名字 + 段位）</div>
+      <div class="h1">先报个号（名字 + 段位）</div>
       <div class="row">
         <input id="playerInput" placeholder="例：xGonv AK" />
-        <button id="btnJoin" class="btn primary">进入房间>jin'ru'f
+        <button id="btnJoin" class="btn primary">进房</button>
       </div>
       <div id="adminHint" class="hint hidden">你现在是管理员模式。</div>
       <div class="hint">
-        核心玩法：CS 版《谁是卧底》 <br/>
-        <br/>
-        身份机制：<br/>
-        • 每边 5 人 <br/>
-        • 平民 4 + 卧底 1（每队各一个）<br/>
-        <br/>
-        平民目标：<br/>
-        • 正常打比赛，赢下对局，找出卧底 <br/>
-        <br/>
-        卧底目标： <br/>
-        • 让对面赢 <br/>
-            但要：<br/>
-            o 演得像正常队友 <br/>
-            o 不能被发现 <br/>
-            o 完成指定任务 <br/>
+        流程：进房 → 管理员开始选人 → 随机队长 → 队长轮流点人（人不齐就点到哪算哪） →
+        管理员分配身份 → 大家确认 → 只看双方名单。<br/>
+        注意：取消准备阶段了，不需要准备！
       </div>
     </div>
   </div>
@@ -52,7 +40,7 @@
         <div class="row" style="margin:0;">
           <button id="btnSwitch" class="btn ghost hidden">切换到候补</button>
 
-          <button id="btnStartDraft" class="btn primary hidden">开始选人（管理员）</button>
+          <button id="btnStartDraft" class="btn primary hidden">开搞选人（管理员）</button>
           <button id="btnAssignRoles" class="btn danger hidden">分配身份（管理员）</button>
 
           <button id="btnLeave" class="btn">退出</button>
@@ -63,7 +51,7 @@
         <div class="adminTitle">管理员工具箱</div>
         <div class="row">
           <button id="btnReset" class="btn ghost">一键重置</button>
-          <button id="btnAdminPeek" class="btn ghost">管理员查看信息（关）</button>
+          <button id="btnAdminPeek" class="btn ghost">管理员查看信息（默认不看）</button>
         </div>
         <div class="hint">踢人：点玩家条右侧“×”。</div>
       </div>
@@ -79,7 +67,7 @@
 
       <!-- 选人阶段 -->
       <div id="stageDraft" class="hidden">
-        <div class="sectionTitle">选人阶段（队长轮流选人）</div>
+        <div class="sectionTitle">选人阶段（队长轮流点人）</div>
 
         <div class="row">
           <div class="card subcard">
@@ -101,7 +89,7 @@
 
         <div class="card">
           <div class="titleRow" style="justify-content:space-between;">
-            <div class="title">等候区（队长看这）</div>
+            <div class="title">等待区（还没被点走的都在这）</div>
             <div id="pickHint" class="badge">—</div>
           </div>
           <div id="waitingBox" class="slots"></div>
@@ -119,7 +107,7 @@
           </div>
           <div id="myRoleCard" class="hint" style="font-size:14px; line-height:1.9;"></div>
           <div class="row" style="margin-top:12px;">
-            <button id="btnConfirmRole" class="btn primary">确认</button>
+            <button id="btnConfirmRole" class="btn primary">我确认了</button>
           </div>
           <div id="revealHint" class="hint"></div>
         </div>
@@ -127,7 +115,7 @@
 
       <!-- 名单页 -->
       <div id="stageTeams" class="hidden">
-        <div class="sectionTitle">队伍名单</div>
+        <div class="sectionTitle">队伍名单（只显示成员，不显示身份）</div>
 
         <div class="row">
           <div class="card subcard">
@@ -141,7 +129,7 @@
           </div>
         </div>
 
-        <div class="hint">重来call管理员。</div>
+        <div class="hint">想重来就让管理员点“一键重置”。</div>
       </div>
 
       <div id="statusBox" class="status">大厅中…</div>
