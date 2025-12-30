@@ -1,4 +1,5 @@
-// app.js（修复版：删除 ready/准备 相关全部代码 + 恢复完整流程 + 去掉所有内部ID显示）
+// app.js（完整版：不显示内部ID + 候补名单常驻 + 所有人可切换）
+// === Firebase 配置 ===
 const firebaseConfig = {
   apiKey: "AIzaSyB9Bygv0bF0pua7eaZrg0P7OKQxI7nQSSA",
   authDomain: "cs2wolf.firebaseapp.com",
@@ -12,6 +13,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// === 常量 ===
 const FIXED_ROOM_ID = "cs2";
 const ADMIN_CODE = "tommy168";
 
@@ -22,6 +24,7 @@ const TEAM_CAP = 5;
 // 蛇形循环（人数不足：没人可选就结束）
 const PICK_ORDER = ["blue","red","red","blue","blue","red","red","blue"];
 
+// === 工具 ===
 const $ = (id) => document.getElementById(id);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 const now = () => Date.now();
@@ -46,17 +49,26 @@ function pickRandom(list){
   return list[Math.floor(Math.random() * list.length)];
 }
 
+// === 本地身份 & 名字缓存（关键：防止名字丢了显示 UUID） ===
 let myPlayerId = localStorage.getItem("cs2_site_playerId") || uid();
 localStorage.setItem("cs2_site_playerId", myPlayerId);
 
+let mySavedName = localStorage.getItem("cs2_site_displayName") || "";
+// 如果输入框存在，预填
+window.addEventListener("DOMContentLoaded", () => {
+  const inp = $("playerInput");
+  if (inp && mySavedName) inp.value = mySavedName;
+});
+
+// === 房间引用 ===
 const roomId = FIXED_ROOM_ID;
 const roomRef = db.ref(`rooms/${roomId}`);
 let snapshotCache = null;
 
+// === UI refs ===
 $("roomTitle").textContent = roomId;
 $("adminHint").classList.toggle("hidden", !isAdmin());
 
-// UI refs
 const entryPage = $("entryPage");
 const roomPage  = $("roomPage");
 
@@ -100,6 +112,7 @@ function showRoom(){
   roomPage.classList.remove("hidden");
 }
 
+// 关闭页面时尝试移除自己（尽力而为）
 window.addEventListener("beforeunload", () => {
   try {
     roomRef.child(`players/${myPlayerId}`).remove();
@@ -112,9 +125,14 @@ async function safeRemoveMe(){
   try { await roomRef.child(`waitlist/${myPlayerId}`).remove(); } catch {}
 }
 
+// === 加入 ===
 btnJoin.onclick = async () => {
-  const displayName = $("playerInput").value.trim();
+  const displayName = ($("playerInput")?.value || "").trim();
   if (!displayName) return alert("先填名字（例：xGonv AK）");
+
+  // 缓存名字：后面名字丢了可以自动补回
+  localStorage.setItem("cs2_site_displayName", displayName);
+  mySavedName = displayName;
 
   const me = { id: myPlayerId, displayName, joinedAt: now() };
 
@@ -129,7 +147,7 @@ btnJoin.onclick = async () => {
     const pCount = Object.keys(room.players).length;
     const wCount = Object.keys(room.waitlist).length;
 
-    // 已在房间：更新名字
+    // 已在房间：更新名字（无论在哪个阶段都更新）
     if (room.players[myPlayerId]) {
       room.players[myPlayerId] = { ...room.players[myPlayerId], displayName };
       return room;
@@ -139,19 +157,18 @@ btnJoin.onclick = async () => {
       return room;
     }
 
-    // 流程中：新进先去候补，避免干扰
-    if (phase === "draft" || phase === "draft_done" || phase === "reveal" || phase === "teams") {
+    // lobby：优先进大厅
+    if (phase === "lobby") {
+      if (pCount < MAX_PLAYERS) {
+        room.players[myPlayerId] = me;
+        return room;
+      }
+      // 满了去候补
       if (wCount < MAX_WAIT) room.waitlist[myPlayerId] = me;
       return room;
     }
 
-    // lobby：优先进大厅
-    if (pCount < MAX_PLAYERS) {
-      room.players[myPlayerId] = me;
-      return room;
-    }
-
-    // 满了去候补
+    // 流程中：新进先去候补，避免干扰（但仍可切换）
     if (wCount < MAX_WAIT) room.waitlist[myPlayerId] = me;
     return room;
   });
@@ -163,6 +180,7 @@ btnJoin.onclick = async () => {
   showRoom();
 };
 
+// === 退出 ===
 btnLeave.onclick = async () => {
   const ok = confirm("确定要退出吗？");
   if (!ok) return;
@@ -170,10 +188,9 @@ btnLeave.onclick = async () => {
   showEntry();
 };
 
+// === 切换大厅/候补（所有人都能切换，不限制阶段） ===
 btnSwitch.onclick = async () => {
   const state = snapshotCache || {};
-  const phase = state.game?.phase || "lobby";
-
   const players = state.players || {};
   const waitlist = state.waitlist || {};
 
@@ -181,9 +198,11 @@ btnSwitch.onclick = async () => {
   const inWait = !!waitlist[myPlayerId];
   if (!inPlayers && !inWait) return;
 
-  if (phase !== "lobby") return alert("流程进行中");
+  // 确保带上名字（如果 Firebase 里没名字）
+  const name = (players[myPlayerId]?.displayName || waitlist[myPlayerId]?.displayName || mySavedName || "未命名");
 
   if (inWait) {
+    // 候补 -> 大厅
     if (Object.keys(players).length >= MAX_PLAYERS) return alert("大厅已满");
     await roomRef.transaction((room) => {
       room = room || {};
@@ -191,7 +210,8 @@ btnSwitch.onclick = async () => {
       room.waitlist = room.waitlist || {};
       if (Object.keys(room.players).length >= MAX_PLAYERS) return room;
       if (!room.waitlist[myPlayerId]) return room;
-      room.players[myPlayerId] = { ...room.waitlist[myPlayerId] };
+
+      room.players[myPlayerId] = { ...room.waitlist[myPlayerId], displayName: room.waitlist[myPlayerId].displayName || name };
       delete room.waitlist[myPlayerId];
       return room;
     });
@@ -199,6 +219,7 @@ btnSwitch.onclick = async () => {
   }
 
   if (inPlayers) {
+    // 大厅 -> 候补
     if (Object.keys(waitlist).length >= MAX_WAIT) return alert("候补满了");
     await roomRef.transaction((room) => {
       room = room || {};
@@ -206,13 +227,15 @@ btnSwitch.onclick = async () => {
       room.waitlist = room.waitlist || {};
       if (Object.keys(room.waitlist).length >= MAX_WAIT) return room;
       if (!room.players[myPlayerId]) return room;
-      room.waitlist[myPlayerId] = { ...room.players[myPlayerId] };
+
+      room.waitlist[myPlayerId] = { ...room.players[myPlayerId], displayName: room.players[myPlayerId].displayName || name };
       delete room.players[myPlayerId];
       return room;
     });
   }
 };
 
+// === 管理员：查看身份开关 ===
 btnAdminPeek.onclick = () => {
   if (!isAdmin()) return;
   adminPeekOn = !adminPeekOn;
@@ -220,6 +243,7 @@ btnAdminPeek.onclick = () => {
   render(snapshotCache || {});
 };
 
+// === 管理员：重置 ===
 btnReset.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能重置");
   try {
@@ -244,6 +268,7 @@ btnReset.onclick = async () => {
   }
 };
 
+// === 管理员：开始选人 ===
 btnStartDraft.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能开始选人");
 
@@ -287,7 +312,6 @@ btnStartDraft.onclick = async () => {
       room.game.phase = "draft";
       room.game.draftAt = now();
 
-      // 1人/2人：没人可选就直接结束选人
       const inTeam = new Set([blueCaptain, redCaptain].filter(Boolean));
       const waiting = ids.filter(pid => !inTeam.has(pid));
       if (waiting.length === 0) {
@@ -305,6 +329,7 @@ btnStartDraft.onclick = async () => {
   }
 };
 
+// === 队长选人 ===
 async function captainPick(targetPid){
   const state = snapshotCache || {};
   if ((state.game?.phase || "lobby") !== "draft") return;
@@ -407,6 +432,7 @@ async function captainPick(targetPid){
   });
 }
 
+// === 管理员：分配身份 ===
 btnAssignRoles.onclick = async () => {
   if (!isAdmin()) return alert("只有管理员能分配身份");
   const phase = snapshotCache?.game?.phase || "lobby";
@@ -426,7 +452,6 @@ btnAssignRoles.onclick = async () => {
 
       if (participants.length < 1) return;
 
-      // 简化：全员里随机 1 个当“内鬼”，其余好人（后续你要每队一个内鬼我再按规则改）
       const impostor = pickRandom(participants);
 
       room.roles = {};
@@ -448,6 +473,7 @@ btnAssignRoles.onclick = async () => {
   }
 };
 
+// === 玩家：确认身份 ===
 btnConfirmRole.onclick = async () => {
   const phase = snapshotCache?.game?.phase || "lobby";
   if (phase !== "reveal") return;
@@ -488,9 +514,11 @@ async function maybeAdvanceToTeams(state){
   });
 }
 
+// === 管理员：踢人 ===
 async function kickPlayer(pid){
   if (!isAdmin()) return alert("只有管理员能踢人");
-  const name = snapshotCache?.players?.[pid]?.displayName || snapshotCache?.waitlist?.[pid]?.displayName || pid;
+  const state = snapshotCache || {};
+  const name = state?.players?.[pid]?.displayName || state?.waitlist?.[pid]?.displayName || "未命名";
   const ok = confirm(`确定踢出：${name}？`);
   if (!ok) return;
 
@@ -513,6 +541,7 @@ async function kickPlayer(pid){
   });
 }
 
+// === 监听房间数据 ===
 roomRef.on("value", async (snap) => {
   snapshotCache = snap.val() || {};
   render(snapshotCache);
@@ -524,8 +553,20 @@ roomRef.on("value", async (snap) => {
     try { await roomRef.child(`kicked/${myPlayerId}`).remove(); } catch {}
     showEntry();
   }
+
+  // 如果我在房里但名字缺失，用本地缓存自动补回（防止再次出现 UUID）
+  try {
+    const players = snapshotCache.players || {};
+    const waitlist = snapshotCache.waitlist || {};
+    const me = players[myPlayerId] || waitlist[myPlayerId];
+    if (me && (!me.displayName || String(me.displayName).trim() === "") && mySavedName) {
+      const path = players[myPlayerId] ? `players/${myPlayerId}/displayName` : `waitlist/${myPlayerId}/displayName`;
+      roomRef.child(path).set(mySavedName);
+    }
+  } catch {}
 });
 
+// === 渲染辅助：队伍槽位 ===
 function renderTeamSlots(container, list, players, colorClass){
   container.innerHTML = "";
   for (let i=0;i<TEAM_CAP;i++){
@@ -537,9 +578,10 @@ function renderTeamSlots(container, list, players, colorClass){
     } else {
       const p = players[pid];
       slot.className = `slot ${colorClass}`;
+      // ✅ 永不显示 pid
       slot.innerHTML = `
         <div class="slotLeft">
-          <div class="slotName">${escapeHtml(p?.displayName || pid)}</div>
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}</div>
         </div>
       `;
     }
@@ -547,6 +589,7 @@ function renderTeamSlots(container, list, players, colorClass){
   }
 }
 
+// === 核心渲染 ===
 function render(state){
   const players = state.players || {};
   const waitlist = state.waitlist || {};
@@ -560,12 +603,13 @@ function render(state){
   $("roleBadge").textContent = isAdmin() ? "管理员" : (inWait ? "候补" : "大厅");
   $("adminPanel").classList.toggle("hidden", !isAdmin());
 
-  // ✅ 只显示名字，不要任何内部ID
+  // ✅ meLine 永不露出 pid
   const meObj = players[myPlayerId] || waitlist[myPlayerId];
-  $("meLine").textContent = meObj ? `你是：${meObj.displayName}` : "";
+  const meName = (meObj?.displayName || mySavedName || "未命名");
+  $("meLine").textContent = meObj ? `你是：${meName}` : "";
 
-  // 按阶段决定是否显示切换
-  const showSwitch = (inPlayers || inWait) && (phase === "lobby");
+  // ✅ 切换按钮：只要在房里就显示（所有人都能切）
+  const showSwitch = (inPlayers || inWait);
   btnSwitch.classList.toggle("hidden", !showSwitch);
   if (showSwitch) btnSwitch.textContent = inWait ? "切换到大厅" : "切换到候补";
 
@@ -575,72 +619,72 @@ function render(state){
   btnStartDraft.disabled = (phase !== "lobby");
   btnAssignRoles.disabled = (phase !== "draft_done");
 
-  // 阶段显示
-  stageLobby.classList.toggle("hidden", phase !== "lobby");
+  // ✅ 关键：候补/大厅名单永远显示
+  stageLobby.classList.remove("hidden");
+
+  // 其他阶段照常切换显示（不影响 stageLobby 常驻）
   stageDraft.classList.toggle("hidden", !(phase === "draft" || phase === "draft_done"));
   stageReveal.classList.toggle("hidden", phase !== "reveal");
   stageTeams.classList.toggle("hidden", phase !== "teams");
 
-  // 大厅渲染（不显示任何ID）
-  if (phase === "lobby") {
-    const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
-    const grid = $("playerGrid");
-    grid.innerHTML = "";
-    for (let i=0;i<MAX_PLAYERS;i++){
-      const pid = pIds[i];
-      const slot = document.createElement("div");
-      if (!pid) {
-        slot.className = "slot empty";
-        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div></div>`;
-      } else {
-        const p = players[pid];
-        slot.className = "slot";
-        slot.innerHTML = `
-          <div class="slotLeft">
-            <div class="slotName">${escapeHtml(p.displayName || pid)}</div>
-          </div>
-        `;
-        if (isAdmin()) {
-          const k = document.createElement("button");
-          k.className = "kickBtn";
-          k.textContent = "×";
-          k.onclick = () => kickPlayer(pid);
-          slot.appendChild(k);
-        }
+  // === 大厅 + 候补渲染（永不显示 pid） ===
+  const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
+  const grid = $("playerGrid");
+  grid.innerHTML = "";
+  for (let i=0;i<MAX_PLAYERS;i++){
+    const pid = pIds[i];
+    const slot = document.createElement("div");
+    if (!pid) {
+      slot.className = "slot empty";
+      slot.innerHTML = `<div class="slotLeft"><div class="slotName">空位</div></div>`;
+    } else {
+      const p = players[pid];
+      slot.className = "slot";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}</div>
+        </div>
+      `;
+      if (isAdmin()) {
+        const k = document.createElement("button");
+        k.className = "kickBtn";
+        k.textContent = "×";
+        k.onclick = () => kickPlayer(pid);
+        slot.appendChild(k);
       }
-      grid.appendChild(slot);
     }
-
-    const wIds = Object.keys(waitlist).sort((a,b)=> (waitlist[a].joinedAt||0)-(waitlist[b].joinedAt||0));
-    const wGrid = $("waitGrid");
-    wGrid.innerHTML = "";
-    for (let i=0;i<MAX_WAIT;i++){
-      const pid = wIds[i];
-      const slot = document.createElement("div");
-      if (!pid) {
-        slot.className = "slot empty";
-        slot.innerHTML = `<div class="slotLeft"><div class="slotName">空候补</div></div>`;
-      } else {
-        const p = waitlist[pid];
-        slot.className = "slot";
-        slot.innerHTML = `
-          <div class="slotLeft">
-            <div class="slotName">${escapeHtml(p.displayName || pid)}</div>
-          </div>
-        `;
-        if (isAdmin()) {
-          const k = document.createElement("button");
-          k.className = "kickBtn";
-          k.textContent = "×";
-          k.onclick = () => kickPlayer(pid);
-          slot.appendChild(k);
-        }
-      }
-      wGrid.appendChild(slot);
-    }
+    grid.appendChild(slot);
   }
 
-  // 选人渲染
+  const wIds = Object.keys(waitlist).sort((a,b)=> (waitlist[a].joinedAt||0)-(waitlist[b].joinedAt||0));
+  const wGrid = $("waitGrid");
+  wGrid.innerHTML = "";
+  for (let i=0;i<MAX_WAIT;i++){
+    const pid = wIds[i];
+    const slot = document.createElement("div");
+    if (!pid) {
+      slot.className = "slot empty";
+      slot.innerHTML = `<div class="slotLeft"><div class="slotName">空候补</div></div>`;
+    } else {
+      const p = waitlist[pid];
+      slot.className = "slot";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}</div>
+        </div>
+      `;
+      if (isAdmin()) {
+        const k = document.createElement("button");
+        k.className = "kickBtn";
+        k.textContent = "×";
+        k.onclick = () => kickPlayer(pid);
+        slot.appendChild(k);
+      }
+    }
+    wGrid.appendChild(slot);
+  }
+
+  // === 选人渲染 ===
   if (phase === "draft" || phase === "draft_done") {
     const draft = state.draft || {};
     const teams = state.teams || { blue:[], red:[] };
@@ -667,7 +711,7 @@ function render(state){
       slot.className = "slot";
       slot.innerHTML = `
         <div class="slotLeft">
-          <div class="slotName">${escapeHtml(p?.displayName || pid)}</div>
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}</div>
         </div>
       `;
 
@@ -692,8 +736,8 @@ function render(state){
       ? "选人结束"
       : (turn ? (turn === "blue" ? "蓝队选人" : "红队选人") : "—");
 
-    const blueCapName = players[captains.blue]?.displayName || "—";
-    const redCapName  = players[captains.red]?.displayName  || "—";
+    const blueCapName = players[captains.blue]?.displayName || "未命名";
+    const redCapName  = players[captains.red]?.displayName  || "未命名";
 
     let text = `队长：蓝队【${escapeHtml(blueCapName)}】`;
     text += captains.red ? `，红队【${escapeHtml(redCapName)}】。` : `（无红队队长）`;
@@ -705,7 +749,7 @@ function render(state){
     draftHelpText.textContent = text;
   }
 
-  // 身份确认
+  // === 身份确认 ===
   if (phase === "reveal") {
     const roles = state.roles || {};
     const confirm = state.confirm || {};
@@ -729,7 +773,7 @@ function render(state){
     }
   }
 
-  // 名单页（只显示名字）
+  // === 名单页（只显示名字） ===
   if (phase === "teams") {
     const teams = state.teams || { blue:[], red:[] };
     const blue = teams.blue || [];
@@ -743,7 +787,7 @@ function render(state){
       div.className = "slot blue";
       div.innerHTML = `
         <div class="slotLeft">
-          <div class="slotName">${escapeHtml(players[pid]?.displayName || pid)}</div>
+          <div class="slotName">${escapeHtml(players[pid]?.displayName || "未命名")}</div>
         </div>
       `;
       teamsBlueOnly.appendChild(div);
@@ -754,24 +798,22 @@ function render(state){
       div.className = "slot red";
       div.innerHTML = `
         <div class="slotLeft">
-          <div class="slotName">${escapeHtml(players[pid]?.displayName || pid)}</div>
+          <div class="slotName">${escapeHtml(players[pid]?.displayName || "未命名")}</div>
         </div>
       `;
       teamsRedOnly.appendChild(div);
     });
   }
 
-  // 状态栏
+  // === 状态栏 ===
   const status = $("statusBox");
   const pCount = Object.keys(players).length;
   const wCount = Object.keys(waitlist).length;
 
   if (phase === "lobby") status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。等待管理员`;
-  else if (phase === "draft") status.textContent = "选人进行中";
-  else if (phase === "draft_done") status.textContent = "选人结束";
-  else if (phase === "reveal") status.textContent = "身份阶段";
-  else if (phase === "teams") status.textContent = "队伍成员";
+  else if (phase === "draft") status.textContent = "选人进行中（名单/候补仍可查看）";
+  else if (phase === "draft_done") status.textContent = "选人结束（名单/候补仍可查看）";
+  else if (phase === "reveal") status.textContent = "身份阶段（名单/候补仍可查看）";
+  else if (phase === "teams") status.textContent = "队伍成员（名单/候补仍可查看）";
   else status.textContent = "状态不认识";
 }
-
-
