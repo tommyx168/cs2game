@@ -703,18 +703,19 @@ function render(state){
       waitingBox.appendChild(slot);
     });
 
-    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "轮到蓝队选人人" : "—";
-    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "轮到红队选人人" : "—";
+    turnBlue.textContent = (phase === "draft" && turn === "blue") ? "轮到蓝队长点人" : "—";
+    turnRed.textContent  = (phase === "draft" && turn === "red")  ? "轮到红队长点人" : "—";
 
     pickHint.textContent = (phase === "draft_done")
-      ? "选人结束：请稍后"
-      : (turn ? (turn === "blue" ? "现在请蓝队选人" : "现在请红队选人") : "—");
+      ? "选人结束：等管理员点【分配身份】"
+      : (turn ? (turn === "blue" ? "现在：蓝队长选人" : "现在：红队长选人") : "—");
 
     const blueCapName = players[blueCaptain]?.displayName || (blueCaptain ? shortPid(blueCaptain) : "—");
     const redCapName  = players[redCaptain]?.displayName  || (redCaptain ? shortPid(redCaptain) : "—");
 
-    let text = `蓝方队长【${escapeHtml(blueCapName)}】`;
-    text += redCaptain ? `，红方队长【${escapeHtml(redCapName)}】。` : `（目前没红队长，人数太少🤣）`;
+    let text = `队长已出炉：蓝队长【${escapeHtml(blueCapName)}】`;
+    text += redCaptain ? `，红队长【${escapeHtml(redCapName)}】。` : `（目前没红队长，人数太少🤣）`;
+    text += ` 人不齐也没事：等待区没人了就算选完。`;
 
     if (isAdmin() && adminPeekOn) {
       text += `\n（管理员查看）phase=${phase} turn=${turn} pickIndex=${draft.pickIndex}`;
@@ -733,19 +734,19 @@ function render(state){
     const participants = Object.keys(roles);
     const allConfirmed = participants.length > 0 && participants.every(pid => confirm[pid] === true);
 
-    revealStatus.textContent = allConfirmed ? "大家都确认了，马上进名单页" : "看完自己的身份后点确认";
+    revealStatus.textContent = allConfirmed ? "大家都确认了，马上进名单页" : "看完自己的身份，点确认";
 
     const myRole = roles[myPlayerId];
     const inMatch = !!myRole;
 
     if (!inMatch) {
-      myRoleCard.innerHTML = `你这把没上场（没被选进队），所以没有身份。<br/>等下一把吧`;
+      myRoleCard.innerHTML = `你这把没上场（没被选进队），所以没有身份。<br/>等下一把吧🤣`;
       btnConfirmRole.disabled = true;
-      revealHint.textContent = "只有队伍中需要确认。";
+      revealHint.textContent = "提示：只有上场的人需要确认。";
     } else {
-      myRoleCard.innerHTML = `你这把的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>记住身份请确认。`;
+      myRoleCard.innerHTML = `你这把的身份是：<b style="font-size:18px;">${escapeHtml(myRole)}</b><br/>看清楚了就点下面“我确认了”。`;
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
-      revealHint.textContent = confirm[myPlayerId] ? "已确认，请等待其他玩家确认。";
+      revealHint.textContent = confirm[myPlayerId] ? "你已确认，等其他人。" : "确认后就不能反悔（要重来让管理员重置）。";
     }
 
     if (isAdmin() && adminPeekOn) {
@@ -799,16 +800,16 @@ function render(state){
   const wCount = Object.keys(waitlist).length;
 
   if (phase === "lobby") {
-    status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员可开启选人阶段。`;
+    status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。管理员想开就直接点【开搞选人】。`;
   } else if (phase === "draft") {
-    status.textContent = "选人进行中：队长从等待区点人。";
+    status.textContent = "选人进行中：轮到队长就从等待区点人。";
   } else if (phase === "draft_done") {
-    status.textContent = "选人结束：请等待。";
+    status.textContent = "选人结束：等管理员点【分配身份】。";
   } else if (phase === "reveal") {
-    status.textContent = "身份阶段：请确认自己的身份。";
+    status.textContent = "身份阶段：每个上场的人确认自己的身份。";
   } else if (phase === "teams") {
-    status.textContent = "双方成员。";
+    status.textContent = "名单页：只显示双方成员（不显示身份）。";
   } else {
-    status.textContent = "报错：call管理员。";
+    status.textContent = "状态不认识：让管理员点一下【一键重置】。";
   }
 }
