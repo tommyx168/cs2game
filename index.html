@@ -19,11 +19,12 @@
       </div>
 
       <div id="adminHint" class="hint hidden">
-        你当前处于管理员模式（你看到这个说明你用的是管理员链接）。
+        你当前处于管理员模式（你用的是管理员链接）。
       </div>
 
       <div class="hint">
-        加入后会看到已加入玩家列表（最多10人），超出进入候补（最多4人）。<br/>
+        前10人进入大厅，超过进候补（最多4人）。<br/>
+        管理员点开始后，只有大厅10人需要准备，候补不用准备。<br/>
         关闭网页/断网会自动退出房间。
       </div>
     </div>
@@ -40,23 +41,26 @@
           </div>
           <div id="meLine" class="hint"></div>
         </div>
-        <button id="btnLeave">退出房间</button>
+        <div class="row" style="margin:0;">
+          <button id="btnReady" class="primary hidden">准备</button>
+          <button id="btnLeave">退出房间</button>
+        </div>
       </div>
 
       <!-- 管理员区（游客看不到） -->
       <div id="adminPanel" class="admin hidden">
         <div class="adminTitle">管理员面板</div>
         <div class="row">
-          <button id="btnStart" class="danger">开始（管理员）</button>
+          <button id="btnStart" class="danger">开始对局（管理员）</button>
           <button id="btnReset">重置（管理员）</button>
         </div>
-        <div class="hint">踢人：直接点玩家格子右上角 “×”。</div>
+        <div class="hint">踢人：点玩家条右侧的 “×”。</div>
       </div>
 
-      <div class="sectionTitle">已加入（最多10人）</div>
+      <div class="sectionTitle">大厅（最多10人，左5右5）</div>
       <div id="playerGrid" class="slots"></div>
 
-      <div class="sectionTitle" style="margin-top:14px;">候补（最多4人）</div>
+      <div class="sectionTitle" style="margin-top:14px;">候补（最多4人，不需要准备）</div>
       <div id="waitGrid" class="waitSlots"></div>
 
       <div id="statusBox" class="status">大厅中…</div>
