@@ -239,6 +239,8 @@ btnReady.onclick = async () => {
  * 条件：phase=ready + 大厅人数>=2 + 偶数 + 全员ready
  */
 btnGoDraft.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员可以进入选人");
+
   const state = snapshotCache || {};
   const phase = state.game?.phase || "lobby";
   if (phase !== "ready") return alert("必须先开始对局并进入准备阶段");
@@ -252,7 +254,34 @@ btnGoDraft.onclick = async () => {
   const allReady = ids.every(pid => players[pid]?.ready === true);
   if (!allReady) return alert("还有人没准备");
 
-  await roomRef.child("game").update({ phase: "draft", draftAt: now() });
+  try {
+    const res = await roomRef.transaction((room) => {
+      room = room || {};
+      room.players = room.players || {};
+      room.game = room.game || { phase: "lobby" };
+
+      // 条件不满足：取消提交（return undefined）
+      if (room.game.phase !== "ready") return;
+
+      const ids = Object.keys(room.players);
+      if (ids.length < 2) return;
+      if (ids.length % 2 !== 0) return;
+
+      const allReady = ids.every(pid => room.players[pid]?.ready === true);
+      if (!allReady) return;
+
+      // 满足条件：进入 draft
+      room.game.phase = "draft";
+      room.game.draftAt = now();
+      return room;
+    });
+
+    if (!res.committed) {
+      alert("进入选人失败：条件不满足 / 有人没准备 / 人数不是偶数 / 或没有写入权限");
+    }
+  } catch (e) {
+    alert("进入选人失败：" + (e?.message || e));
+  }
 };
 
 // 踢人（管理员）
@@ -311,11 +340,16 @@ function render(state){
   btnReady.classList.toggle("hidden", !showReady);
   if (showReady) btnReady.textContent = players[myPlayerId].ready ? "取消准备" : "准备";
 
-  // 进入选人按钮：所有人都看得到，但只有条件满足才可点
+  // 进入选人按钮：只给管理员看
+  btnGoDraft.classList.toggle("hidden", !isAdmin());
+
   const ids = Object.keys(players);
   const allReady = ids.length > 0 && ids.every(pid => players[pid]?.ready === true);
   const canDraft = phase === "ready" && ids.length >= 2 && (ids.length % 2 === 0) && allReady;
-  btnGoDraft.disabled = !canDraft;
+
+  // 只有管理员需要看到可点/不可点
+  if (isAdmin()) btnGoDraft.disabled = !canDraft;
+
 
   // 渲染大厅10条
   const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
@@ -393,3 +427,4 @@ function render(state){
     status.textContent = `大厅 ${pCount}/10，候补 ${wCount}/4。`;
   }
 }
+
