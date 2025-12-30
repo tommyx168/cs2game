@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CS2 私房局选人大厅</title>
-  <link rel="stylesheet" href="style.css?v=20251230_7" />
+  <link rel="stylesheet" href="style.css?v=20251230_8" />
 </head>
 <body>
 
-  <!-- 进入页 -->
+  <!-- 进房页 -->
   <div id="entryPage" class="center">
     <div class="panel">
       <h1>先报个号（名字 + 段位）</h1>
@@ -21,10 +21,8 @@
       <div id="adminHint" class="hint hidden">你现在是管理员模式。</div>
 
       <div class="hint">
-        规则：大厅最多10人，满了自动进候补（最多4人）。<br/>
-        开始对局后：大厅的人点准备，候补不用准备。<br/>
-        进入选人：大厅人数为偶数 + 全员准备。<br/>
-        选人阶段：随机出蓝/红队长，队长轮流选人（蛇形顺序）。
+        流程：进房 → 管理员开始选人 → 随机队长 → 队长轮流点人 → 管理员分配身份 → 大家确认 → 只看双方名单。<br/>
+        人不齐也能玩：管理员点开始就走流程，选到哪算哪。
       </div>
     </div>
   </div>
@@ -43,10 +41,10 @@
 
         <div class="row" style="margin:0;">
           <button id="btnSwitch" class="ghost hidden">切换到候补</button>
-          <button id="btnReady" class="primary hidden">准备</button>
 
           <!-- 只给管理员显示 -->
-          <button id="btnGoDraft" class="primary hidden">开搞选人</button>
+          <button id="btnStartDraft" class="primary hidden">开始选人（管理员）</button>
+          <button id="btnAssignRoles" class="danger hidden">分配身份（管理员）</button>
 
           <button id="btnLeave">退出</button>
         </div>
@@ -56,24 +54,23 @@
       <div id="adminPanel" class="admin hidden">
         <div class="adminTitle">管理员工具箱</div>
         <div class="row">
-          <button id="btnStart" class="danger">开始对局</button>
-          <button id="btnReset">一键重置</button>
+          <button id="btnReset" class="ghost">一键重置</button>
           <button id="btnAdminPeek" class="ghost">管理员查看信息（默认不看）</button>
         </div>
         <div class="hint">踢人：点玩家条右侧“×”。</div>
       </div>
 
-      <!-- 常规列表区 -->
-      <div id="normalStage">
+      <!-- 阶段：大厅 -->
+      <div id="stageLobby">
         <div class="sectionTitle">大厅（最多10人）</div>
         <div id="playerGrid" class="slots"></div>
 
-        <div class="sectionTitle" style="margin-top:14px;">候补（最多4人，不用准备）</div>
+        <div class="sectionTitle" style="margin-top:14px;">候补（最多4人）</div>
         <div id="waitGrid" class="waitSlots"></div>
       </div>
 
-      <!-- 选人阶段 UI -->
-      <div id="draftStage" class="hidden" style="margin-top:14px;">
+      <!-- 阶段：选人 -->
+      <div id="stageDraft" class="hidden" style="margin-top:14px;">
         <div class="sectionTitle">选人阶段（队长轮流点人）</div>
 
         <div class="row">
@@ -96,12 +93,50 @@
 
         <div class="card">
           <div class="titleRow" style="justify-content:space-between;">
-            <div class="title">等待区（还没被选的都在这）</div>
+            <div class="title">等待区（还没被点走的都在这）</div>
             <div id="pickHint" class="badge">—</div>
           </div>
           <div id="waitingBox" class="slots"></div>
           <div class="hint" id="draftHelpText"></div>
         </div>
+      </div>
+
+      <!-- 阶段：身份确认 -->
+      <div id="stageReveal" class="hidden" style="margin-top:14px;">
+        <div class="sectionTitle">身份确认</div>
+        <div class="card">
+          <div class="titleRow" style="justify-content:space-between;">
+            <div class="title">你的身份</div>
+            <div id="revealStatus" class="badge">—</div>
+          </div>
+
+          <div id="myRoleCard" class="hint" style="font-size:14px; line-height:1.9;"></div>
+
+          <div class="row" style="margin-top:12px;">
+            <button id="btnConfirmRole" class="primary">我确认了</button>
+          </div>
+
+          <div class="hint" id="revealHint"></div>
+        </div>
+      </div>
+
+      <!-- 阶段：只看名单 -->
+      <div id="stageTeams" class="hidden" style="margin-top:14px;">
+        <div class="sectionTitle">队伍名单（只显示成员，不显示身份）</div>
+
+        <div class="row">
+          <div class="card" style="flex:1; min-width:280px;">
+            <div class="title">蓝队</div>
+            <div id="teamsBlueOnly"></div>
+          </div>
+
+          <div class="card" style="flex:1; min-width:280px;">
+            <div class="title">红队</div>
+            <div id="teamsRedOnly"></div>
+          </div>
+        </div>
+
+        <div class="hint">想重来就让管理员点“一键重置”。</div>
       </div>
 
       <div id="statusBox" class="status">大厅中…</div>
@@ -110,6 +145,6 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-  <script src="app.js?v=20251230_7"></script>
+  <script src="app.js?v=20251230_8"></script>
 </body>
 </html>
