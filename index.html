@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CS2 内鬼选人</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 入场页：只输入一个框 -->
+  <div id="entryPage" class="center">
+    <div class="panel">
+      <h1>请输入 名字 + 段位</h1>
+
+      <div class="row">
+        <input id="playerInput" placeholder="例：xGonv AK（只要一个输入框）" />
+      </div>
+
+      <div class="row">
+        <button id="btnJoin" class="primary">加入</button>
+      </div>
+
+      <div class="hint">
+        房主打开页面会自动生成房间，并复制“游客链接”发给朋友。<br/>
+        朋友打开游客链接后，只输入一行文字就能加入。
+      </div>
+
+      <div id="shareBox" class="share hidden">
+        <div class="shareTitle">游客链接（发给朋友）</div>
+        <div class="shareRow">
+          <input id="shareLink" readonly />
+          <button id="btnCopyLink">复制</button>
+        </div>
+        <div id="hostBadge" class="hint"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 大厅/游戏页 -->
+  <div id="roomPage" class="wrap hidden">
+    <div class="card">
+      <h2>房间：<span id="roomTitle"></span></h2>
+         <div class="share" style="margin-top:12px;">
+            <div class="shareTitle">游客链接（发给朋友）</div>
+            <div class="shareRow">
+               <input id="shareLinkRoom" readonly />
+               <button id="btnCopyLinkRoom">复制</button>
+            </div>
+            <div id="hostBadgeRoom" class="hint"></div>
+         </div>
+
+
+      <div class="grid2">
+        <div>
+          <h3>已加入玩家（<span id="countPlayers">0</span>）</h3>
+          <ul id="playerList" class="list"></ul>
+
+          <div class="row">
+            <button id="btnLeave">退出房间</button>
+          </div>
+
+          <div class="row">
+            <button id="btnStart" class="danger">开始（仅房主）</button>
+            <button id="btnReset">重置（仅房主）</button>
+          </div>
+
+          <div class="hint">
+            你可以任何人数开始（至少 2 人）。<br/>
+            只有房主能开始/重置。
+          </div>
+        </div>
+
+        <div>
+          <h3>选人状态</h3>
+          <div id="statusBox" class="status">大厅中，等待房主开始…</div>
+
+          <div id="draftBox" class="hidden">
+            <div class="teams">
+              <div class="team">
+                <h4>CT</h4>
+                <ul id="ctList" class="list"></ul>
+              </div>
+              <div class="team">
+                <h4>T</h4>
+                <ul id="tList" class="list"></ul>
+              </div>
+            </div>
+
+            <div class="row">
+              <label>当前队长选人</label>
+              <select id="pickSelect"></select>
+              <button id="btnPick" class="primary">确认选择</button>
+            </div>
+          </div>
+
+          <div class="card sub">
+            <h3>我的身份</h3>
+            <pre id="myRole" style="white-space:pre-wrap;margin:0;">未分配</pre>
+            <div class="row">
+              <button id="btnReveal">查看身份</button>
+              <button id="btnConfirmRole">我已确认身份</button>
+            </div>
+            <div class="hint">
+              只有你自己能看到自己的身份（同一设备）。<br/>
+              如果你换设备打开同一链接，会被当成新玩家。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase CDN -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
