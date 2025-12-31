@@ -220,3 +220,16 @@ input::placeholder{ color:#7f93b9; }
 .clickable:hover{
   filter:brightness(1.08);
 }
+
+
+/* 角色标签：仅本人身份页/投票结果页使用 */
+.roleTag{
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+  border:1px solid transparent;
+}
+.roleTag.civilian{ color:var(--good); border-color: color-mix(in oklab, var(--good) 55%, transparent); }
+.roleTag.undercover{ color:var(--purple); border-color: color-mix(in oklab, var(--purple) 55%, transparent); }
