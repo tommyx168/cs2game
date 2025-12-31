@@ -95,17 +95,27 @@ const btnLeave = $("btnLeave");
 const btnSwitch = $("btnSwitch");
 const btnStartDraft = $("btnStartDraft");
 const btnAssignRoles = $("btnAssignRoles");
-const btnStartVote = $("btnStartVote");
-const btnEndVote = $("btnEndVote");
 const btnReset = $("btnReset");
 const btnAdminPeek = $("btnAdminPeek");
 const btnConfirmRole = $("btnConfirmRole");
+const btnStartVote = $("btnStartVote");
+const btnEndVote = $("btnEndVote");
+
 
 const stageLobby = $("stageLobby");
 const stageDraft = $("stageDraft");
 const stageReveal = $("stageReveal");
 const stageTeams = $("stageTeams");
 const stageVote = $("stageVote");
+const voteHint = $("voteHint");
+const voteResult = $("voteResult");
+const voteBlueCol = $("voteBlueCol");
+const voteRedCol = $("voteRedCol");
+const voteBlueList = $("voteBlueList");
+const voteRedList = $("voteRedList");
+const voteBlueLocked = $("voteBlueLocked");
+const voteRedLocked = $("voteRedLocked");
+
 
 const blueTeamBox = $("blueTeamBox");
 const redTeamBox = $("redTeamBox");
@@ -118,10 +128,6 @@ const draftHelpText = $("draftHelpText");
 const myRoleCard = $("myRoleCard");
 const revealStatus = $("revealStatus");
 const revealHint = $("revealHint");
-
-const voteList = $("voteList");
-const voteHint = $("voteHint");
-const voteResult = $("voteResult");
 
 const teamsBlueOnly = $("teamsBlueOnly");
 const teamsRedOnly  = $("teamsRedOnly");
@@ -530,120 +536,10 @@ room.missions[redUndercover]  = { ...m2 };
   }
 };
 
+// === 管理员：投票阶段 ===
+btnStartVote.onclick = startVote;
+btnEndVote.onclick = endVote;
 
-
-// === 管理员：进入投票阶段（赛后投内鬼） ===
-// 规则：蓝队只能投蓝队，红队只能投红队；所有人同一界面，但列表按本人阵营过滤
-btnStartVote.onclick = async () => {
-  if (!isAdmin()) return alert("只有管理员能进入投票");
-  const phase = snapshotCache?.game?.phase || "lobby";
-  if (phase !== "teams") return alert("请在“双方成员”阶段进入投票");
-
-  try {
-    const res = await roomRef.transaction((room) => {
-      room = room || {};
-      room.game = room.game || { phase: "lobby" };
-      if (room.game.phase !== "teams") return;
-
-      // 初始化投票
-      room.votes = {};
-      room.voteResult = null;
-
-      room.game.phase = "vote";
-      room.game.voteAt = now();
-      return room;
-    });
-    if (!res.committed) alert("进入投票失败：可能没写权限/阶段不对");
-  } catch (e) {
-    alert("进入投票失败：" + (e?.message || e));
-  }
-};
-
-// 玩家：投票（只允许投自己队的人）
-async function castVote(targetPid){
-  const state = snapshotCache || {};
-  if ((state.game?.phase || "lobby") !== "vote") return;
-
-  const roles = state.roles || {};
-  if (!roles[myPlayerId]) return alert("你这把没上场");
-
-  const teams = state.teams || { blue:[], red:[] };
-  const myTeam =
-    (teams.blue || []).includes(myPlayerId) ? "blue" :
-    (teams.red  || []).includes(myPlayerId) ? "red" : null;
-
-  if (!myTeam) return alert("你不在队伍中");
-  const allowedTargets = myTeam === "blue" ? (teams.blue || []) : (teams.red || []);
-  if (!allowedTargets.includes(targetPid)) return alert("只能投自己队的玩家");
-
-  await roomRef.child(`votes/${myPlayerId}`).set(targetPid);
-}
-
-// === 管理员：结束投票并结算 ===
-btnEndVote.onclick = async () => {
-  if (!isAdmin()) return alert("只有管理员能结束投票");
-  const phase = snapshotCache?.game?.phase || "lobby";
-  if (phase !== "vote") return alert("当前不在投票阶段");
-
-  try {
-    const res = await roomRef.transaction((room) => {
-      room = room || {};
-      room.game = room.game || { phase:"lobby" };
-      if (room.game.phase !== "vote") return;
-
-      const teams = room.teams || { blue:[], red:[] };
-      const roles = room.roles || {};
-      const votes = room.votes || {};
-
-      const blue = (teams.blue || []).slice();
-      const red  = (teams.red  || []).slice();
-
-      // 统计：蓝投蓝、红投红（即使有人乱写，也只按同队计入）
-      const countVotes = (voters, allowedTargets) => {
-        const counts = {};
-        allowedTargets.forEach(pid => counts[pid] = 0);
-        voters.forEach(voter => {
-          const t = votes[voter];
-          if (allowedTargets.includes(t)) counts[t] = (counts[t] || 0) + 1;
-        });
-        return counts;
-      };
-
-      const blueCounts = countVotes(blue, blue);
-      const redCounts  = countVotes(red,  red);
-
-      const pickTop = (counts) => {
-        const entries = Object.entries(counts);
-        if (!entries.length) return null;
-        // 按票数降序
-        entries.sort((a,b)=> b[1]-a[1]);
-        const top = entries[0];
-        // 平票：取所有同票中按字符串顺序最小（稳定，不然每次不确定）
-        const topScore = top[1];
-        const tied = entries.filter(([_,c]) => c === topScore).map(([pid])=>pid).sort();
-        return tied[0] || top[0];
-      };
-
-      const blueOut = pickTop(blueCounts);
-      const redOut  = pickTop(redCounts);
-
-      room.voteResult = {
-        blue: blueOut ? { out: blueOut, role: roles[blueOut] || "未知", counts: blueCounts } : null,
-        red:  redOut  ? { out: redOut,  role: roles[redOut]  || "未知", counts: redCounts  } : null,
-        endedAt: now()
-      };
-
-      // 结束后回到 teams 阶段（你也可以改成 stay vote）
-      room.game.phase = "teams";
-      room.game.voteEndedAt = now();
-      return room;
-    });
-
-    if (!res.committed) alert("结束投票失败：可能没写权限/阶段不对");
-  } catch (e) {
-    alert("结束投票失败：" + (e?.message || e));
-  }
-};
 
 // === 玩家：确认身份 ===
 btnConfirmRole.onclick = async () => {
@@ -685,6 +581,176 @@ async function maybeAdvanceToTeams(state){
     return room;
   });
 }
+// === 投票系统（teams -> vote -> vote_done）===
+// 规则：蓝队只能投蓝队、红队只能投红队；若某队平票，仅该队平票成员重投；另一队先锁定出局但不揭示身份，直到双方都确定出局。
+
+function getTeamOf(pid, teams){
+  if ((teams?.blue||[]).includes(pid)) return "blue";
+  if ((teams?.red||[]).includes(pid)) return "red";
+  return null;
+}
+
+function allVoted(team, voteObj, eligibleVoters){
+  const v = team === "blue" ? (voteObj.votesBlue||{}) : (voteObj.votesRed||{});
+  return eligibleVoters.every(pid => !!v[pid]);
+}
+
+function tally(team, voteObj){
+  const candidates = team === "blue" ? (voteObj.candidatesBlue||[]) : (voteObj.candidatesRed||[]);
+  const votesMap = team === "blue" ? (voteObj.votesBlue||{}) : (voteObj.votesRed||{});
+  const counts = {};
+  candidates.forEach(pid => counts[pid] = 0);
+  Object.values(votesMap).forEach(t => {
+    if (counts[t] !== undefined) counts[t] += 1;
+  });
+  let max = -1;
+  let winners = [];
+  for (const [pid, c] of Object.entries(counts)){
+    if (c > max){ max = c; winners = [pid]; }
+    else if (c === max){ winners.push(pid); }
+  }
+  // 如果所有人都弃权/无票（max=0），也按平票处理
+  if (winners.length === 0) return {tie:true, winners: candidates};
+  return {tie: winners.length > 1, winners};
+}
+
+async function startVote(){
+  if (!isAdmin()) return alert("只有管理员能进入投票");
+  const phase = snapshotCache?.game?.phase || "lobby";
+  if (phase !== "teams") return alert("请在“队伍成员”阶段进入投票");
+
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.game = room.game || { phase:"lobby" };
+    room.players = room.players || {};
+    room.teams = room.teams || { blue:[], red:[] };
+
+    if (room.game.phase !== "teams") return;
+
+    const blueTeam = (room.teams.blue||[]).filter(pid => !!room.players[pid]);
+    const redTeam  = (room.teams.red ||[]).filter(pid => !!room.players[pid]);
+
+    if (blueTeam.length < 1 || redTeam.length < 1) return;
+
+    room.vote = {
+      startedAt: now(),
+      // 当前轮可投候选（平票时会缩小到平票成员）
+      candidatesBlue: blueTeam.slice(),
+      candidatesRed: redTeam.slice(),
+      votesBlue: {},
+      votesRed: {},
+      // 锁定出局（但身份不揭示，直到双方都确定）
+      outBlue: null,
+      outRed: null,
+      resolvedBlue: false,
+      resolvedRed: false,
+      completed: false,
+      // 最终揭示
+      revealed: { blueRole: null, redRole: null }
+    };
+
+    room.game.phase = "vote";
+    room.game.voteAt = now();
+    return room;
+  });
+}
+
+async function castVote(targetPid){
+  const state = snapshotCache || {};
+  const phase = state.game?.phase || "lobby";
+  if (phase !== "vote") return;
+
+  const players = state.players || {};
+  const teams = state.teams || {};
+  const voteObj = state.vote || {};
+
+  const myTeam = getTeamOf(myPlayerId, teams);
+  const targetTeam = getTeamOf(targetPid, teams);
+  if (!myTeam || myTeam !== targetTeam) return;
+
+  // 如果本队已经锁定出局，则不允许再投
+  if (myTeam === "blue" && voteObj.resolvedBlue) return;
+  if (myTeam === "red"  && voteObj.resolvedRed)  return;
+
+  const candidates = myTeam === "blue" ? (voteObj.candidatesBlue||[]) : (voteObj.candidatesRed||[]);
+  if (!candidates.includes(targetPid)) return;
+
+  const path = myTeam === "blue" ? `vote/votesBlue/${myPlayerId}` : `vote/votesRed/${myPlayerId}`;
+  await roomRef.child(path).set(targetPid);
+}
+
+async function endVote(){
+  if (!isAdmin()) return alert("只有管理员能结束投票");
+  const state = snapshotCache || {};
+  const phase = state.game?.phase || "lobby";
+  if (phase !== "vote") return alert("当前不在投票阶段");
+
+  const teams = state.teams || {};
+  const players = state.players || {};
+  const voteObj = state.vote || {};
+
+  const blueVoters = (teams.blue||[]).filter(pid => !!players[pid] && !voteObj.resolvedBlue);
+  const redVoters  = (teams.red ||[]).filter(pid => !!players[pid] && !voteObj.resolvedRed);
+
+  // 结束投票前，要求“仍在投票的队伍”所有人都投了
+  if (blueVoters.length && !allVoted("blue", voteObj, blueVoters)) return alert("蓝队还有人没投票");
+  if (redVoters.length  && !allVoted("red",  voteObj, redVoters))  return alert("红队还有人没投票");
+
+  await roomRef.transaction((room) => {
+    room = room || {};
+    room.game = room.game || { phase:"lobby" };
+    if (room.game.phase !== "vote") return;
+
+    room.players = room.players || {};
+    room.teams = room.teams || { blue:[], red:[] };
+    room.roles = room.roles || {};
+    room.vote = room.vote || {};
+
+    const v = room.vote;
+
+    // 结算蓝队（如果尚未锁定）
+    if (!v.resolvedBlue){
+      const r = tally("blue", v);
+      if (r.tie){
+        v.candidatesBlue = r.winners;  // 缩小候选到平票成员
+        v.votesBlue = {};              // 清票，进入重投
+      } else {
+        v.outBlue = r.winners[0];
+        v.resolvedBlue = true;
+      }
+    }
+
+    // 结算红队（如果尚未锁定）
+    if (!v.resolvedRed){
+      const r = tally("red", v);
+      if (r.tie){
+        v.candidatesRed = r.winners;
+        v.votesRed = {};
+      } else {
+        v.outRed = r.winners[0];
+        v.resolvedRed = true;
+      }
+    }
+
+    // 双方都锁定后，进入“揭示结果”页
+    if (v.resolvedBlue && v.resolvedRed){
+      v.completed = true;
+      v.revealed = {
+        blueRole: v.outBlue ? (room.roles[v.outBlue] || null) : null,
+        redRole:  v.outRed  ? (room.roles[v.outRed]  || null) : null
+      };
+      room.game.phase = "vote_done";
+      room.game.voteDoneAt = now();
+    } else {
+      // 仍处于 vote 阶段，另一队继续重投；已锁定的一队保持 out 但不揭示身份
+      room.game.phase = "vote";
+    }
+
+    room.vote = v;
+    return room;
+  });
+}
+
 
 // === 管理员：踢人 ===
 async function kickPlayer(pid){
@@ -760,6 +826,115 @@ function renderTeamSlots(container, list, players, colorClass){
     container.appendChild(slot);
   }
 }
+function renderVoteStage(state){
+  const players = state.players || {};
+  const teams = state.teams || { blue:[], red:[] };
+  const voteObj = state.vote || {};
+  const phase = state.game?.phase || "lobby";
+
+  const myTeam = getTeamOf(myPlayerId, teams);
+
+  // 两列永远存在：左蓝右红；本人所在队亮，另一队灰
+  voteBlueCol.classList.toggle("disabled", myTeam === "red");
+  voteRedCol.classList.toggle("disabled", myTeam === "blue");
+
+  // 提示
+  if (phase === "vote_done" || voteObj.completed){
+    voteHint.textContent = "投票结束";
+  } else {
+    const blueNeedRevote = !voteObj.resolvedBlue && (voteObj.candidatesBlue||[]).length < (teams.blue||[]).length;
+    const redNeedRevote  = !voteObj.resolvedRed  && (voteObj.candidatesRed||[]).length  < (teams.red ||[]).length;
+    if (blueNeedRevote || redNeedRevote) voteHint.textContent = "出现平票，重投中";
+    else voteHint.textContent = "投票中";
+  }
+
+  // 渲染列表工具
+  function renderSide(side){
+    const teamIds = side === "blue" ? (teams.blue||[]) : (teams.red||[]);
+    const resolved = side === "blue" ? !!voteObj.resolvedBlue : !!voteObj.resolvedRed;
+    const outPid = side === "blue" ? voteObj.outBlue : voteObj.outRed;
+    const candidates = side === "blue" ? (voteObj.candidatesBlue||teamIds) : (voteObj.candidatesRed||teamIds);
+    const votesMap = side === "blue" ? (voteObj.votesBlue||{}) : (voteObj.votesRed||{});
+    const listEl = side === "blue" ? voteBlueList : voteRedList;
+    const lockedEl = side === "blue" ? voteBlueLocked : voteRedLocked;
+
+    listEl.innerHTML = "";
+    lockedEl.textContent = "";
+
+    // 这个客户端是否允许对该队投票：必须是本人队 & 该队未锁定 & 当前在 vote 阶段
+    const canVoteThisSide = (phase === "vote") && (myTeam === side) && !resolved;
+
+    // 如果该队锁定出局：只展示出局玩家（不揭示身份，除非双方都完成）
+    if (resolved && outPid){
+      const p = players[outPid];
+      const div = document.createElement("div");
+      div.className = "slot";
+      div.innerHTML = `<div class="slotLeft"><div class="slotName">${escapeHtml(p?.displayName || "未命名")}</div></div>`;
+      listEl.appendChild(div);
+
+      if (voteObj.completed || phase === "vote_done"){
+        const role = (side === "blue") ? voteObj.revealed?.blueRole : voteObj.revealed?.redRole;
+        if (role){
+          lockedEl.innerHTML = `身份：<span class="roleTag ${role === "卧底" ? "undercover" : "civilian"}">${escapeHtml(role)}</span>`;
+        }
+      } else {
+        lockedEl.textContent = "已确定出局（身份等待揭示）";
+      }
+      return;
+    }
+
+    // 未锁定：展示该队所有成员；候选以外灰一点（平票重投时）
+    teamIds.forEach(pid => {
+      const p = players[pid];
+      const slot = document.createElement("div");
+      const isCandidate = candidates.includes(pid);
+
+      slot.className = "slot" + (canVoteThisSide && isCandidate ? " clickable" : "");
+      slot.style.opacity = isCandidate ? "1" : "0.55";
+
+      const pickedByMe = votesMap[myPlayerId] === pid;
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}${pickedByMe ? '<span class="votePickBadge">(已投)</span>' : ''}</div>
+        </div>
+      `;
+
+      if (canVoteThisSide && isCandidate){
+        slot.onclick = () => castVote(pid);
+      }
+      listEl.appendChild(slot);
+    });
+
+    // 平票提示
+    if (teamIds.length && candidates.length && candidates.length < teamIds.length){
+      const names = candidates.map(pid => escapeHtml(players[pid]?.displayName || "未命名")).join("、");
+      lockedEl.textContent = `平票重投：仅可投 ${names}`;
+    }
+  }
+
+  renderSide("blue");
+  renderSide("red");
+
+  // 底部结果提示（只有投票完成后显示双方出局+身份）
+  if (voteObj.completed || phase === "vote_done"){
+    const blueName = players[voteObj.outBlue]?.displayName || "未命名";
+    const redName  = players[voteObj.outRed]?.displayName  || "未命名";
+    const blueRole = voteObj.revealed?.blueRole || "";
+    const redRole  = voteObj.revealed?.redRole  || "";
+
+    voteResult.innerHTML =
+      `蓝队出局：<b>${escapeHtml(blueName)}</b> ` +
+      (blueRole ? `（<span class="roleTag ${blueRole === "卧底" ? "undercover" : "civilian"}">${escapeHtml(blueRole)}</span>）` : "") +
+      `<br/>红队出局：<b>${escapeHtml(redName)}</b> ` +
+      (redRole ? `（<span class="roleTag ${redRole === "卧底" ? "undercover" : "civilian"}">${escapeHtml(redRole)}</span>）` : "");
+  } else {
+    // 投票进行中：显示本人队限制说明 + 管理员操作提示
+    if (myTeam === "blue") voteResult.textContent = "你是蓝队：只能投蓝队。管理员：所有人投完后点“结束投票”。";
+    else if (myTeam === "red") voteResult.textContent = "你是红队：只能投红队。管理员：所有人投完后点“结束投票”。";
+    else voteResult.textContent = "你这把没上场，不能投票。";
+  }
+}
+
 
 // === 核心渲染 ===
 function render(state){
@@ -792,9 +967,9 @@ function render(state){
   btnEndVote.classList.toggle("hidden", !isAdmin());
   btnStartDraft.disabled = (phase !== "lobby");
   btnAssignRoles.disabled = (phase !== "draft_done");
-
   btnStartVote.disabled = (phase !== "teams");
   btnEndVote.disabled = (phase !== "vote");
+
   // ✅ 关键：候补/大厅名单永远显示
   stageLobby.classList.toggle("hidden", phase !== "lobby");
 
@@ -802,8 +977,8 @@ function render(state){
   stageDraft.classList.toggle("hidden", !(phase === "draft" || phase === "draft_done"));
   stageReveal.classList.toggle("hidden", phase !== "reveal");
   stageTeams.classList.toggle("hidden", phase !== "teams");
+  stageVote.classList.toggle("hidden", !(phase === "vote" || phase === "vote_done"));
 
-  stageVote.classList.toggle("hidden", phase !== "vote");
   // === 大厅 + 候补渲染（永不显示 pid） ===
   const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
   const grid = $("playerGrid");
@@ -946,20 +1121,15 @@ function render(state){
       const missions = state.missions || {};
       const myMission = missions[myPlayerId];
 
-      const roleTag = (role) => {
-        const cls = role === "卧底" ? "undercover" : "civilian";
-        return `<span class="roleTag ${cls}">${escapeHtml(role)}</span>`;
-      };
-
       if (myRole === "卧底" && myMission) {
         myRoleCard.innerHTML =
-          `你的身份：${roleTag("卧底")}<br/>` +
+          `你的身份：<b style="font-size:18px;">卧底</b><br/>` +
           `你的任务：<b>${escapeHtml(myMission.name)}</b><br/>` +
           `<span style="color:#a7b7d6;">${escapeHtml(myMission.desc)}</span><br/>` +
           `看清楚了就点“确认”。`;
       } else {
         myRoleCard.innerHTML =
-          `你的身份：${roleTag(myRole)}<br/>看清楚了就点“确认”。`;
+          `你的身份：<b style="font-size:18px;">${escapeHtml(myRole)}</b>”`;
       }
 
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
@@ -999,68 +1169,9 @@ function render(state){
     });
   }
 
-  
-  // === 投票阶段（同界面，但仅显示本队可投名单） ===
-  if (phase === "vote") {
-    const roles = state.roles || {};
-    const teams = state.teams || { blue:[], red:[] };
-
-    const myTeam =
-      (teams.blue || []).includes(myPlayerId) ? "blue" :
-      (teams.red  || []).includes(myPlayerId) ? "red" : null;
-
-    const allowed = myTeam === "blue" ? (teams.blue || []) :
-                    myTeam === "red"  ? (teams.red  || [])  : [];
-
-    // 顶部提示
-    if (myTeam === "blue") voteHint.textContent = "你是蓝队：只能投蓝队";
-    else if (myTeam === "red") voteHint.textContent = "你是红队：只能投红队";
-    else voteHint.textContent = "你未上场";
-
-    // 投票名单
-    voteList.innerHTML = "";
-    const myVote = (state.votes || {})[myPlayerId];
-
-    allowed.forEach(pid => {
-      const p = players[pid];
-      const slot = document.createElement("div");
-      slot.className = "slot clickable";
-      slot.innerHTML = `
-        <div class="slotLeft">
-          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}${pid === myVote ? "（已投）" : ""}</div>
-          <div class="slotSub">ID: ${escapeHtml(pid)}</div>
-        </div>
-      `;
-      if (roles[myPlayerId]) {
-        slot.onclick = () => castVote(pid);
-      } else {
-        slot.style.opacity = "0.65";
-      }
-      voteList.appendChild(slot);
-    });
-
-    // 投票结果展示（结束投票后会写到 voteResult）
-    const vr = state.voteResult || null;
-    if (!vr) {
-      voteResult.textContent = isAdmin()
-        ? "管理员：所有人投完后点“结束投票”。"
-        : "投票完成后等待管理员结算。";
-    } else {
-      const fmtRole = (role) => {
-        const cls = role === "卧底" ? "undercover" : "civilian";
-        return `<span class="roleTag ${cls}">${escapeHtml(role)}</span>`;
-      };
-
-      const blueLine = vr.blue
-        ? `蓝队被投票出去的是：${escapeHtml(vr.blue.out)} 身份：${fmtRole(vr.blue.role)}`
-        : "蓝队：无结果";
-
-      const redLine = vr.red
-        ? `红队被投票出去的是：${escapeHtml(vr.red.out)} 身份：${fmtRole(vr.red.role)}`
-        : "红队：无结果";
-
-      voteResult.innerHTML = `${blueLine}<br/>${redLine}`;
-    }
+    // === 投票渲染 ===
+  if (phase === "vote" || phase === "vote_done") {
+    renderVoteStage(state);
   }
 
 // === 状态栏 ===
@@ -1073,10 +1184,8 @@ function render(state){
   else if (phase === "draft_done") status.textContent = "等待下阶段";
   else if (phase === "reveal") status.textContent = "身份阶段";
   else if (phase === "teams") status.textContent = "队伍成员";
-  else if (phase === "vote") status.textContent = "投票阶段（只可投自己队）";
   else status.textContent = "状态不认识";
 }
-
 
 
 
