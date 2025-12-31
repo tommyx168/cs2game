@@ -1184,8 +1184,8 @@ function render(state){
   else if (phase === "draft_done") status.textContent = "等待下阶段";
   else if (phase === "reveal") status.textContent = "身份阶段";
   else if (phase === "teams") status.textContent = "队伍成员";
-  else status.textContent = "状态不认识";
 }
+
 
 
 
