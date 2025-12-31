@@ -15,7 +15,7 @@ const db = firebase.database();
 
 // === 常量 ===
 const FIXED_ROOM_ID = "cs2";
-const ADMIN_CODE = "tommy168";
+const ADMIN_CODE = "cs2wolf";
 
 const MAX_PLAYERS = 10;
 const MAX_WAIT = 4;
@@ -95,6 +95,8 @@ const btnLeave = $("btnLeave");
 const btnSwitch = $("btnSwitch");
 const btnStartDraft = $("btnStartDraft");
 const btnAssignRoles = $("btnAssignRoles");
+const btnStartVote = $("btnStartVote");
+const btnEndVote = $("btnEndVote");
 const btnReset = $("btnReset");
 const btnAdminPeek = $("btnAdminPeek");
 const btnConfirmRole = $("btnConfirmRole");
@@ -103,6 +105,7 @@ const stageLobby = $("stageLobby");
 const stageDraft = $("stageDraft");
 const stageReveal = $("stageReveal");
 const stageTeams = $("stageTeams");
+const stageVote = $("stageVote");
 
 const blueTeamBox = $("blueTeamBox");
 const redTeamBox = $("redTeamBox");
@@ -115,6 +118,10 @@ const draftHelpText = $("draftHelpText");
 const myRoleCard = $("myRoleCard");
 const revealStatus = $("revealStatus");
 const revealHint = $("revealHint");
+
+const voteList = $("voteList");
+const voteHint = $("voteHint");
+const voteResult = $("voteResult");
 
 const teamsBlueOnly = $("teamsBlueOnly");
 const teamsRedOnly  = $("teamsRedOnly");
@@ -524,6 +531,120 @@ room.missions[redUndercover]  = { ...m2 };
 };
 
 
+
+// === 管理员：进入投票阶段（赛后投内鬼） ===
+// 规则：蓝队只能投蓝队，红队只能投红队；所有人同一界面，但列表按本人阵营过滤
+btnStartVote.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能进入投票");
+  const phase = snapshotCache?.game?.phase || "lobby";
+  if (phase !== "teams") return alert("请在“双方成员”阶段进入投票");
+
+  try {
+    const res = await roomRef.transaction((room) => {
+      room = room || {};
+      room.game = room.game || { phase: "lobby" };
+      if (room.game.phase !== "teams") return;
+
+      // 初始化投票
+      room.votes = {};
+      room.voteResult = null;
+
+      room.game.phase = "vote";
+      room.game.voteAt = now();
+      return room;
+    });
+    if (!res.committed) alert("进入投票失败：可能没写权限/阶段不对");
+  } catch (e) {
+    alert("进入投票失败：" + (e?.message || e));
+  }
+};
+
+// 玩家：投票（只允许投自己队的人）
+async function castVote(targetPid){
+  const state = snapshotCache || {};
+  if ((state.game?.phase || "lobby") !== "vote") return;
+
+  const roles = state.roles || {};
+  if (!roles[myPlayerId]) return alert("你这把没上场");
+
+  const teams = state.teams || { blue:[], red:[] };
+  const myTeam =
+    (teams.blue || []).includes(myPlayerId) ? "blue" :
+    (teams.red  || []).includes(myPlayerId) ? "red" : null;
+
+  if (!myTeam) return alert("你不在队伍中");
+  const allowedTargets = myTeam === "blue" ? (teams.blue || []) : (teams.red || []);
+  if (!allowedTargets.includes(targetPid)) return alert("只能投自己队的玩家");
+
+  await roomRef.child(`votes/${myPlayerId}`).set(targetPid);
+}
+
+// === 管理员：结束投票并结算 ===
+btnEndVote.onclick = async () => {
+  if (!isAdmin()) return alert("只有管理员能结束投票");
+  const phase = snapshotCache?.game?.phase || "lobby";
+  if (phase !== "vote") return alert("当前不在投票阶段");
+
+  try {
+    const res = await roomRef.transaction((room) => {
+      room = room || {};
+      room.game = room.game || { phase:"lobby" };
+      if (room.game.phase !== "vote") return;
+
+      const teams = room.teams || { blue:[], red:[] };
+      const roles = room.roles || {};
+      const votes = room.votes || {};
+
+      const blue = (teams.blue || []).slice();
+      const red  = (teams.red  || []).slice();
+
+      // 统计：蓝投蓝、红投红（即使有人乱写，也只按同队计入）
+      const countVotes = (voters, allowedTargets) => {
+        const counts = {};
+        allowedTargets.forEach(pid => counts[pid] = 0);
+        voters.forEach(voter => {
+          const t = votes[voter];
+          if (allowedTargets.includes(t)) counts[t] = (counts[t] || 0) + 1;
+        });
+        return counts;
+      };
+
+      const blueCounts = countVotes(blue, blue);
+      const redCounts  = countVotes(red,  red);
+
+      const pickTop = (counts) => {
+        const entries = Object.entries(counts);
+        if (!entries.length) return null;
+        // 按票数降序
+        entries.sort((a,b)=> b[1]-a[1]);
+        const top = entries[0];
+        // 平票：取所有同票中按字符串顺序最小（稳定，不然每次不确定）
+        const topScore = top[1];
+        const tied = entries.filter(([_,c]) => c === topScore).map(([pid])=>pid).sort();
+        return tied[0] || top[0];
+      };
+
+      const blueOut = pickTop(blueCounts);
+      const redOut  = pickTop(redCounts);
+
+      room.voteResult = {
+        blue: blueOut ? { out: blueOut, role: roles[blueOut] || "未知", counts: blueCounts } : null,
+        red:  redOut  ? { out: redOut,  role: roles[redOut]  || "未知", counts: redCounts  } : null,
+        endedAt: now()
+      };
+
+      // 结束后回到 teams 阶段（你也可以改成 stay vote）
+      room.game.phase = "teams";
+      room.game.voteEndedAt = now();
+      return room;
+    });
+
+    if (!res.committed) alert("结束投票失败：可能没写权限/阶段不对");
+  } catch (e) {
+    alert("结束投票失败：" + (e?.message || e));
+  }
+};
+
 // === 玩家：确认身份 ===
 btnConfirmRole.onclick = async () => {
   const phase = snapshotCache?.game?.phase || "lobby";
@@ -667,9 +788,13 @@ function render(state){
   // 管理员按钮
   btnStartDraft.classList.toggle("hidden", !isAdmin());
   btnAssignRoles.classList.toggle("hidden", !isAdmin());
+  btnStartVote.classList.toggle("hidden", !isAdmin());
+  btnEndVote.classList.toggle("hidden", !isAdmin());
   btnStartDraft.disabled = (phase !== "lobby");
   btnAssignRoles.disabled = (phase !== "draft_done");
 
+  btnStartVote.disabled = (phase !== "teams");
+  btnEndVote.disabled = (phase !== "vote");
   // ✅ 关键：候补/大厅名单永远显示
   stageLobby.classList.toggle("hidden", phase !== "lobby");
 
@@ -678,6 +803,7 @@ function render(state){
   stageReveal.classList.toggle("hidden", phase !== "reveal");
   stageTeams.classList.toggle("hidden", phase !== "teams");
 
+  stageVote.classList.toggle("hidden", phase !== "vote");
   // === 大厅 + 候补渲染（永不显示 pid） ===
   const pIds = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
   const grid = $("playerGrid");
@@ -820,15 +946,20 @@ function render(state){
       const missions = state.missions || {};
       const myMission = missions[myPlayerId];
 
+      const roleTag = (role) => {
+        const cls = role === "卧底" ? "undercover" : "civilian";
+        return `<span class="roleTag ${cls}">${escapeHtml(role)}</span>`;
+      };
+
       if (myRole === "卧底" && myMission) {
         myRoleCard.innerHTML =
-          `你的身份：<b style="font-size:18px;">卧底</b><br/>` +
+          `你的身份：${roleTag("卧底")}<br/>` +
           `你的任务：<b>${escapeHtml(myMission.name)}</b><br/>` +
           `<span style="color:#a7b7d6;">${escapeHtml(myMission.desc)}</span><br/>` +
           `看清楚了就点“确认”。`;
       } else {
         myRoleCard.innerHTML =
-          `你的身份：<b style="font-size:18px;">${escapeHtml(myRole)}</b>”`;
+          `你的身份：${roleTag(myRole)}<br/>看清楚了就点“确认”。`;
       }
 
       btnConfirmRole.disabled = (confirm[myPlayerId] === true);
@@ -868,7 +999,71 @@ function render(state){
     });
   }
 
-  // === 状态栏 ===
+  
+  // === 投票阶段（同界面，但仅显示本队可投名单） ===
+  if (phase === "vote") {
+    const roles = state.roles || {};
+    const teams = state.teams || { blue:[], red:[] };
+
+    const myTeam =
+      (teams.blue || []).includes(myPlayerId) ? "blue" :
+      (teams.red  || []).includes(myPlayerId) ? "red" : null;
+
+    const allowed = myTeam === "blue" ? (teams.blue || []) :
+                    myTeam === "red"  ? (teams.red  || [])  : [];
+
+    // 顶部提示
+    if (myTeam === "blue") voteHint.textContent = "你是蓝队：只能投蓝队";
+    else if (myTeam === "red") voteHint.textContent = "你是红队：只能投红队";
+    else voteHint.textContent = "你未上场";
+
+    // 投票名单
+    voteList.innerHTML = "";
+    const myVote = (state.votes || {})[myPlayerId];
+
+    allowed.forEach(pid => {
+      const p = players[pid];
+      const slot = document.createElement("div");
+      slot.className = "slot clickable";
+      slot.innerHTML = `
+        <div class="slotLeft">
+          <div class="slotName">${escapeHtml(p?.displayName || "未命名")}${pid === myVote ? "（已投）" : ""}</div>
+          <div class="slotSub">ID: ${escapeHtml(pid)}</div>
+        </div>
+      `;
+      if (roles[myPlayerId]) {
+        slot.onclick = () => castVote(pid);
+      } else {
+        slot.style.opacity = "0.65";
+      }
+      voteList.appendChild(slot);
+    });
+
+    // 投票结果展示（结束投票后会写到 voteResult）
+    const vr = state.voteResult || null;
+    if (!vr) {
+      voteResult.textContent = isAdmin()
+        ? "管理员：所有人投完后点“结束投票”。"
+        : "投票完成后等待管理员结算。";
+    } else {
+      const fmtRole = (role) => {
+        const cls = role === "卧底" ? "undercover" : "civilian";
+        return `<span class="roleTag ${cls}">${escapeHtml(role)}</span>`;
+      };
+
+      const blueLine = vr.blue
+        ? `蓝队被投票出去的是：${escapeHtml(vr.blue.out)} 身份：${fmtRole(vr.blue.role)}`
+        : "蓝队：无结果";
+
+      const redLine = vr.red
+        ? `红队被投票出去的是：${escapeHtml(vr.red.out)} 身份：${fmtRole(vr.red.role)}`
+        : "红队：无结果";
+
+      voteResult.innerHTML = `${blueLine}<br/>${redLine}`;
+    }
+  }
+
+// === 状态栏 ===
   const status = $("statusBox");
   const pCount = Object.keys(players).length;
   const wCount = Object.keys(waitlist).length;
@@ -878,6 +1073,7 @@ function render(state){
   else if (phase === "draft_done") status.textContent = "等待下阶段";
   else if (phase === "reveal") status.textContent = "身份阶段";
   else if (phase === "teams") status.textContent = "队伍成员";
+  else if (phase === "vote") status.textContent = "投票阶段（只可投自己队）";
   else status.textContent = "状态不认识";
 }
 
