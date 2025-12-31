@@ -1,5 +1,6 @@
 /* style.css */
 :root{
+  --purple:#b56bff;
   --bg0:#070b14;
   --bg1:#0b1224;
   --card:#0c1630cc;
@@ -222,13 +223,39 @@ input::placeholder{ color:#7f93b9; }
 }
 
 
-/* 角色标签：仅本人身份页/投票结果页使用 */
+/* === Vote stage === */
+.voteGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:14px;
+  margin-top:12px;
+}
+.voteCol{
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  padding:12px;
+  background: rgba(255,255,255,0.02);
+}
+.voteCol.disabled{
+  background: rgba(180,180,180,0.06);
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.voteColTitle{
+  font-weight:900;
+  margin-bottom:8px;
+}
+.votePickBadge{
+  margin-left:8px;
+  font-size:12px;
+  opacity:0.85;
+}
 .roleTag{
   display:inline-block;
   padding:4px 10px;
   border-radius:999px;
   font-size:12px;
-  font-weight:800;
+  font-weight:900;
   border:1px solid transparent;
 }
 .roleTag.civilian{ color:var(--good); border-color: color-mix(in oklab, var(--good) 55%, transparent); }
