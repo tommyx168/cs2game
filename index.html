@@ -55,9 +55,8 @@
 
           <button id="btnStartDraft" class="btn primary hidden">开始选人</button>
           <button id="btnAssignRoles" class="btn danger hidden">分配身份</button>
-
-          <button id="btnStartVote" class="btn primary hidden">进入投票</button>
-          <button id="btnEndVote" class="btn danger hidden">结束投票</button>
+        <button id="btnStartVote" class="btn primary hidden">进入投票</button>
+        <button id="btnEndVote" class="btn danger hidden">结束投票</button>
 
           <button id="btnLeave" class="btn">退出</button>
         </div>
@@ -141,25 +140,39 @@
         <div class="hint">重来请call管理员</div>
       </div>
 
-      
-      <div id="stageVote" class="hidden">
-        <div class="sectionTitle">投票阶段</div>
-        <div class="card">
-          <div class="titleRow" style="justify-content:space-between;">
-            <div class="title">选择你认为的卧底（只可投本队）</div>
-            <div id="voteHint" class="badge">—</div>
-          </div>
-          <div id="voteList" class="slots" style="margin-top:10px;"></div>
-          <div id="voteResult" class="hint" style="margin-top:10px;"></div>
-        </div>
-      </div>
-
       <div id="statusBox" class="status">大厅中…</div>
+    
+    <!-- 投票阶段 -->
+    <div id="stageVote" class="hidden">
+      <div class="sectionTitle">投票阶段</div>
+      <div class="card">
+        <div class="titleRow" style="justify-content:space-between;">
+          <div class="title">选择你认为的卧底（只能投自己队）</div>
+          <div id="voteHint" class="badge">—</div>
+        </div>
+
+        <div class="voteGrid">
+          <div id="voteBlueCol" class="voteCol">
+            <div class="voteColTitle">蓝队</div>
+            <div id="voteBlueList" class="slots"></div>
+            <div id="voteBlueLocked" class="hint"></div>
+          </div>
+
+          <div id="voteRedCol" class="voteCol">
+            <div class="voteColTitle">红队</div>
+            <div id="voteRedList" class="slots"></div>
+            <div id="voteRedLocked" class="hint"></div>
+          </div>
+        </div>
+
+        <div id="voteResult" class="hint" style="margin-top:10px;"></div>
+      </div>
     </div>
+</div>
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-  <script src="app.js?v=20251230_vote_teamfilter_v1"></script>
+  <script src="app.js?v=20251230_fix_admin_noid"></script>
 </body>
 </html>
